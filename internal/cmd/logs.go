@@ -38,6 +38,7 @@ func NewLogsCommand() *cobra.Command {
 	cmd.AddCommand(newLogsTailCmd(defaultLogsAPI))
 	cmd.AddCommand(newLogsAggregateCmd(defaultLogsAPI))
 	cmd.AddCommand(newLogsIndexCmd(defaultLogsIndexAPI))
+	cmd.AddCommand(newLogsPipelineCmd(defaultLogsPipelineAPI))
 	return cmd
 }
 
