@@ -124,7 +124,6 @@ func newLogsCustomDestCreateCmd(mkAPI func() (*logsCustomDestAPI, error)) *cobra
 		name     string
 		url      string
 		username string
-		password string
 		query    string
 	)
 
@@ -132,11 +131,9 @@ func newLogsCustomDestCreateCmd(mkAPI func() (*logsCustomDestAPI, error)) *cobra
 		Use:   "create",
 		Short: "Create a custom destination",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			password := os.Getenv("DD_LOGS_DEST_PASSWORD")
 			if password == "" {
-				password = os.Getenv("DD_LOGS_DEST_PASSWORD")
-			}
-			if password == "" {
-				return fmt.Errorf("password must be provided via --password or DD_LOGS_DEST_PASSWORD env var")
+				return fmt.Errorf("password must be provided via DD_LOGS_DEST_PASSWORD env var")
 			}
 			auth := datadogV2.CustomDestinationHttpDestinationAuthBasicAsCustomDestinationHttpDestinationAuth(
 				datadogV2.NewCustomDestinationHttpDestinationAuthBasic(
@@ -184,7 +181,6 @@ func newLogsCustomDestCreateCmd(mkAPI func() (*logsCustomDestAPI, error)) *cobra
 	cmd.Flags().StringVar(&name, "name", "", "destination name (required)")
 	cmd.Flags().StringVar(&url, "url", "", "HTTP endpoint URL (required)")
 	cmd.Flags().StringVar(&username, "username", "", "basic auth username (required)")
-	cmd.Flags().StringVar(&password, "password", "", "basic auth password (required)")
 	cmd.Flags().StringVar(&query, "query", "", "log filter query")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("url")

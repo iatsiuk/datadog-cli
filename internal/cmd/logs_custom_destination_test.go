@@ -166,8 +166,6 @@ func TestLogsCustomDestShowRequiresID(t *testing.T) {
 }
 
 func TestLogsCustomDestCreateFlags(t *testing.T) {
-	t.Parallel()
-
 	var capturedBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		capturedBody, _ = io.ReadAll(r.Body)
@@ -176,13 +174,13 @@ func TestLogsCustomDestCreateFlags(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	t.Setenv("DD_LOGS_DEST_PASSWORD", "pass")
 	root, _ := buildCustomDestCmd(newTestLogsCustomDestAPI(srv))
 	root.SetArgs([]string{
 		"custom-destination", "create",
 		"--name", "My HTTP Destination",
 		"--url", "https://example.com/logs",
 		"--username", "user",
-		"--password", "pass",
 		"--query", "service:web",
 	})
 	if err := root.Execute(); err != nil {

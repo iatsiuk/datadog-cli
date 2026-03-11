@@ -240,6 +240,9 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 						return nil
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
+					// keep partial nextSeen to avoid re-printing already-output logs on retry
+					prevSeen = currSeen
+					currSeen = nextSeen
 				} else {
 					prevSeen = currSeen
 					currSeen = nextSeen
