@@ -131,7 +131,7 @@ func newMetricsQueryCmd(mkAPI func() (*metricsV1API, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&query, "query", "", "metric query (required)")
-	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-1h)")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-1h) (required)")
 	cmd.Flags().StringVar(&toStr, "to", "now", "end time: unix timestamp or relative (e.g. now)")
 	return cmd
 }
@@ -825,7 +825,9 @@ func newMetricsEstimateCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
 			var rows [][]string
 			if data := resp.Data; data != nil {
 				if attrs := data.Attributes; attrs != nil {
-					rows = append(rows, []string{"estimate_type", string(attrs.GetEstimateType())})
+					if t := attrs.GetEstimateType(); t != "" {
+						rows = append(rows, []string{"estimate_type", string(t)})
+					}
 					rows = append(rows, []string{"estimated_output_series", strconv.FormatInt(attrs.GetEstimatedOutputSeries(), 10)})
 					if t := attrs.GetEstimatedAt(); !t.IsZero() {
 						rows = append(rows, []string{"estimated_at", t.UTC().Format(time.RFC3339)})
@@ -1009,6 +1011,10 @@ func newMetricsTagConfigUpdateCmd(mkAPI func() (*metricsV2API, error)) *cobra.Co
 		Short: "Update a tag configuration for a metric",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("tags") {
+				return fmt.Errorf("at least one flag must be provided (--tags)")
+			}
+
 			mapi, err := mkAPI()
 			if err != nil {
 				return err
