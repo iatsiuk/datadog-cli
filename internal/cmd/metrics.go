@@ -398,8 +398,7 @@ func newMetricsTimeseriesCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command
 			if resp.Data != nil && resp.Data.Attributes != nil {
 				times := resp.Data.Attributes.GetTimes()
 				values := resp.Data.Attributes.GetValues()
-				for seriesIdx, seriesVals := range values {
-					_ = seriesIdx
+				for _, seriesVals := range values {
 					for i, v := range seriesVals {
 						if v == nil || i >= len(times) {
 							continue
@@ -934,7 +933,9 @@ func newMetricsTagConfigShowCmd(mkAPI func() (*metricsV2API, error)) *cobra.Comm
 
 			metricType := ""
 			tags := ""
+			id := ""
 			if data := resp.Data; data != nil {
+				id = data.GetId()
 				if attrs := data.Attributes; attrs != nil {
 					metricType = string(attrs.GetMetricType())
 					tags = strings.Join(attrs.GetTags(), ", ")
@@ -943,7 +944,7 @@ func newMetricsTagConfigShowCmd(mkAPI func() (*metricsV2API, error)) *cobra.Comm
 
 			headers := []string{"FIELD", "VALUE"}
 			rows := [][]string{
-				{"metric", resp.Data.GetId()},
+				{"metric", id},
 				{"type", metricType},
 				{"tags", tags},
 			}

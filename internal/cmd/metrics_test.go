@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -353,8 +355,16 @@ func TestMetricsListRelativeTime(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(capturedURL, "from=") {
+	parsed, err := url.ParseRequestURI(capturedURL)
+	if err != nil {
+		t.Fatalf("invalid captured URL %q: %v", capturedURL, err)
+	}
+	fromVal := parsed.Query().Get("from")
+	if fromVal == "" {
 		t.Errorf("from param not found in URL: %s", capturedURL)
+	}
+	if _, err := strconv.ParseInt(fromVal, 10, 64); err != nil {
+		t.Errorf("from param %q is not a numeric unix timestamp: %v", fromVal, err)
 	}
 }
 
@@ -495,9 +505,12 @@ func TestMetricsScalarJSONOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	var result interface{}
+	var result map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["data"] == nil {
+		t.Errorf("JSON output missing 'data' key:\n%s", buf.String())
 	}
 }
 
@@ -615,9 +628,12 @@ func TestMetricsTimeseriesJSONOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	var result interface{}
+	var result map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["data"] == nil {
+		t.Errorf("JSON output missing 'data' key:\n%s", buf.String())
 	}
 }
 
@@ -648,6 +664,22 @@ func TestMetricsSubmitFlagsRequired(t *testing.T) {
 	root.SetArgs([]string{"metrics", "submit", "--type", "gauge", "--points", "1700000000:42.0"})
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected error when --metric is missing")
+	}
+}
+
+func TestMetricsSubmitPointsRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit", "--metric", "custom.test.metric", "--type", "gauge"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --points is missing")
 	}
 }
 
@@ -1000,8 +1032,16 @@ func TestMetricsQueryRelativeTime(t *testing.T) {
 		t.Fatal("no request made")
 	}
 	// relative times should resolve to numeric unix timestamps in the URL
-	if !strings.Contains(capturedURL, "from=") {
+	parsed, err := url.ParseRequestURI(capturedURL)
+	if err != nil {
+		t.Fatalf("invalid captured URL %q: %v", capturedURL, err)
+	}
+	fromVal := parsed.Query().Get("from")
+	if fromVal == "" {
 		t.Errorf("from param not found in URL: %s", capturedURL)
+	}
+	if _, err := strconv.ParseInt(fromVal, 10, 64); err != nil {
+		t.Errorf("from param %q is not a numeric unix timestamp: %v", fromVal, err)
 	}
 }
 
@@ -1458,6 +1498,9 @@ func TestMetricsTagsJSONOutput(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
 	}
+	if result["data"] == nil {
+		t.Errorf("JSON output missing 'data' key:\n%s", buf.String())
+	}
 }
 
 func TestMetricsTagsRequiresArg(t *testing.T) {
@@ -1524,6 +1567,9 @@ func TestMetricsVolumesJSONOutput(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
 	}
+	if result["data"] == nil {
+		t.Errorf("JSON output missing 'data' key:\n%s", buf.String())
+	}
 }
 
 func TestMetricsVolumesRequiresArg(t *testing.T) {
@@ -1589,6 +1635,9 @@ func TestMetricsAssetsJSONOutput(t *testing.T) {
 	var result map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["data"] == nil {
+		t.Errorf("JSON output missing 'data' key:\n%s", buf.String())
 	}
 }
 
@@ -1681,6 +1730,9 @@ func TestMetricsEstimateJSONOutput(t *testing.T) {
 	var result map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["data"] == nil {
+		t.Errorf("JSON output missing 'data' key:\n%s", buf.String())
 	}
 }
 

@@ -16,6 +16,11 @@ CLI tool for querying Datadog from the terminal.
 - `datadogV2.LogsCustomDestinationsApi`: ListLogsCustomDestinations, GetLogsCustomDestination, CreateLogsCustomDestination, UpdateLogsCustomDestination, DeleteLogsCustomDestination
 - `datadogV2.LogsRestrictionQueriesApi`: ListRestrictionQueries, GetRestrictionQuery, CreateRestrictionQuery, UpdateRestrictionQuery, DeleteRestrictionQuery
 
+### Metrics
+
+- `datadogV1.MetricsApi`: QueryMetrics, ListMetrics, ListActiveMetrics, GetMetricMetadata, UpdateMetricMetadata
+- `datadogV2.MetricsApi`: QueryScalarData, QueryTimeseriesData, SubmitMetrics, ListTagConfigurations, GetTagConfiguration, CreateTagConfiguration, UpdateTagConfiguration, DeleteTagConfiguration, ListTagsByMetricName, ListVolumesByMetricName, ListMetricAssets, EstimateMetricsOutputSeries
+
 ## Code Style
 
 ### Imports
