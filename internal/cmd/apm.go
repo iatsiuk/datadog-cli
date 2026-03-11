@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -57,6 +58,20 @@ func defaultRetentionFiltersAPI() (*retentionFiltersAPI, error) {
 	return &retentionFiltersAPI{api: datadogV2.NewAPMRetentionFiltersApi(c), ctx: ctx}, nil
 }
 
+type spansMetricsAPI struct {
+	api *datadogV2.SpansMetricsApi
+	ctx context.Context
+}
+
+func defaultSpansMetricsAPI() (*spansMetricsAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &spansMetricsAPI{api: datadogV2.NewSpansMetricsApi(c), ctx: ctx}, nil
+}
+
 // NewAPMCommand returns the apm cobra command group.
 func NewAPMCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -68,6 +83,7 @@ func NewAPMCommand() *cobra.Command {
 	cmd.AddCommand(newAPMAggregateCmd(defaultSpansAPI))
 	cmd.AddCommand(newAPMServicesCmd(defaultAPMAPI))
 	cmd.AddCommand(newAPMRetentionFilterCmd(defaultRetentionFiltersAPI))
+	cmd.AddCommand(newAPMSpanMetricCmd(defaultSpansMetricsAPI))
 	return cmd
 }
 
@@ -710,6 +726,235 @@ func newRetentionFilterDeleteCmd(mkAPI func() (*retentionFiltersAPI, error)) *co
 			}
 			if err != nil {
 				return fmt.Errorf("delete retention filter: %w", err)
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "deleted")
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
+}
+
+func newAPMSpanMetricCmd(mkAPI func() (*spansMetricsAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "span-metric",
+		Short: "Manage span-based metrics",
+	}
+	cmd.AddCommand(newSpanMetricListCmd(mkAPI))
+	cmd.AddCommand(newSpanMetricShowCmd(mkAPI))
+	cmd.AddCommand(newSpanMetricCreateCmd(mkAPI))
+	cmd.AddCommand(newSpanMetricUpdateCmd(mkAPI))
+	cmd.AddCommand(newSpanMetricDeleteCmd(mkAPI))
+	return cmd
+}
+
+func formatSpanMetricRow(d datadogV2.SpansMetricResponseData) []string {
+	attrs := d.GetAttributes()
+	compute := ""
+	if c := attrs.Compute; c != nil {
+		compute = string(c.GetAggregationType())
+		if p := c.Path; p != nil {
+			compute += ":" + *p
+		}
+	}
+	filter := ""
+	if f := attrs.Filter; f != nil {
+		filter = f.GetQuery()
+	}
+	var groupBys []string
+	for _, g := range attrs.GetGroupBy() {
+		groupBys = append(groupBys, g.GetPath())
+	}
+	groupBy := strings.Join(groupBys, ",")
+	return []string{d.GetId(), compute, filter, groupBy}
+}
+
+func newSpanMetricListCmd(mkAPI func() (*spansMetricsAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List span-based metrics",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			smapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := smapi.api.ListSpansMetrics(smapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list span metrics: %w", err)
+			}
+			headers := []string{"ID", "COMPUTE", "FILTER", "GROUP-BY"}
+			var rows [][]string
+			for _, d := range resp.GetData() {
+				rows = append(rows, formatSpanMetricRow(d))
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newSpanMetricShowCmd(mkAPI func() (*spansMetricsAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show a span-based metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			smapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := smapi.api.GetSpansMetric(smapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get span metric: %w", err)
+			}
+			headers := []string{"ID", "COMPUTE", "FILTER", "GROUP-BY"}
+			rows := [][]string{formatSpanMetricRow(resp.GetData())}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newSpanMetricCreateCmd(mkAPI func() (*spansMetricsAPI, error)) *cobra.Command {
+	var (
+		id        string
+		computeAg string
+		computePa string
+		filterQ   string
+		groupBys  []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a span-based metric",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if computeAg == "" {
+				return fmt.Errorf("--compute is required")
+			}
+			aggType, err := datadogV2.NewSpansMetricComputeAggregationTypeFromValue(computeAg)
+			if err != nil {
+				return fmt.Errorf("--compute: %w", err)
+			}
+
+			smapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			compute := datadogV2.NewSpansMetricCompute(*aggType)
+			if computePa != "" {
+				compute.SetPath(computePa)
+			}
+			attrs := datadogV2.NewSpansMetricCreateAttributes(*compute)
+			if filterQ != "" {
+				f := datadogV2.NewSpansMetricFilter()
+				f.SetQuery(filterQ)
+				attrs.SetFilter(*f)
+			}
+			for _, path := range groupBys {
+				attrs.GroupBy = append(attrs.GroupBy, *datadogV2.NewSpansMetricGroupBy(path))
+			}
+			data := datadogV2.NewSpansMetricCreateData(*attrs, id, datadogV2.SPANSMETRICTYPE_SPANS_METRICS)
+			req := datadogV2.NewSpansMetricCreateRequest(*data)
+
+			resp, httpResp, err := smapi.api.CreateSpansMetric(smapi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create span metric: %w", err)
+			}
+			headers := []string{"ID", "COMPUTE", "FILTER", "GROUP-BY"}
+			rows := [][]string{formatSpanMetricRow(resp.GetData())}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "metric id (required)")
+	cmd.Flags().StringVar(&computeAg, "compute", "", "aggregation type: count or distribution (required)")
+	cmd.Flags().StringVar(&computePa, "path", "", "span attribute path for distribution metric")
+	cmd.Flags().StringVar(&filterQ, "filter", "", "span search query filter")
+	cmd.Flags().StringSliceVar(&groupBys, "group-by", nil, "span attribute paths to group by (repeatable)")
+	return cmd
+}
+
+func newSpanMetricUpdateCmd(mkAPI func() (*spansMetricsAPI, error)) *cobra.Command {
+	var (
+		filterQ  string
+		groupBys []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update a span-based metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			smapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewSpansMetricUpdateAttributes()
+			if filterQ != "" {
+				f := datadogV2.NewSpansMetricFilter()
+				f.SetQuery(filterQ)
+				attrs.SetFilter(*f)
+			}
+			for _, path := range groupBys {
+				attrs.GroupBy = append(attrs.GroupBy, *datadogV2.NewSpansMetricGroupBy(path))
+			}
+			data := datadogV2.NewSpansMetricUpdateData(*attrs, datadogV2.SPANSMETRICTYPE_SPANS_METRICS)
+			req := datadogV2.NewSpansMetricUpdateRequest(*data)
+
+			resp, httpResp, err := smapi.api.UpdateSpansMetric(smapi.ctx, args[0], *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update span metric: %w", err)
+			}
+			headers := []string{"ID", "COMPUTE", "FILTER", "GROUP-BY"}
+			rows := [][]string{formatSpanMetricRow(resp.GetData())}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&filterQ, "filter", "", "span search query filter")
+	cmd.Flags().StringSliceVar(&groupBys, "group-by", nil, "span attribute paths to group by (repeatable)")
+	return cmd
+}
+
+func newSpanMetricDeleteCmd(mkAPI func() (*spansMetricsAPI, error)) *cobra.Command {
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a span-based metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fmt.Errorf("pass --yes to confirm deletion")
+			}
+
+			smapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := smapi.api.DeleteSpansMetric(smapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete span metric: %w", err)
 			}
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "deleted")
 			return nil

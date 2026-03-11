@@ -914,3 +914,286 @@ func TestAPMRetentionFilterDeleteWithYes(t *testing.T) {
 		t.Errorf("path %q does not contain rf-1", capturedPath)
 	}
 }
+
+// span-metric mock responses
+const mockSpanMetricsListResponse = `{
+	"data": [
+		{
+			"id": "sm.count",
+			"type": "spans_metrics",
+			"attributes": {
+				"compute": {"aggregation_type": "count"},
+				"filter": {"query": "service:web"},
+				"group_by": [{"path": "@http.status_code"}]
+			}
+		},
+		{
+			"id": "sm.duration",
+			"type": "spans_metrics",
+			"attributes": {
+				"compute": {"aggregation_type": "distribution", "path": "@duration"},
+				"filter": {"query": "*"}
+			}
+		}
+	]
+}`
+
+const mockSpanMetricGetResponse = `{
+	"data": {
+		"id": "sm.count",
+		"type": "spans_metrics",
+		"attributes": {
+			"compute": {"aggregation_type": "count"},
+			"filter": {"query": "service:web"},
+			"group_by": [{"path": "@http.status_code"}]
+		}
+	}
+}`
+
+const mockSpanMetricCreateResponse = `{
+	"data": {
+		"id": "sm.new",
+		"type": "spans_metrics",
+		"attributes": {
+			"compute": {"aggregation_type": "count"},
+			"filter": {"query": "env:prod"}
+		}
+	}
+}`
+
+func newTestSpansMetricsAPI(srv *httptest.Server) func() (*spansMetricsAPI, error) {
+	return func() (*spansMetricsAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &spansMetricsAPI{api: datadogV2.NewSpansMetricsApi(c), ctx: apiCtx}, nil
+	}
+}
+
+func buildAPMSpanMetricCmd(mkAPI func() (*spansMetricsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	apm := &cobra.Command{Use: "apm"}
+	apm.AddCommand(newAPMSpanMetricCmd(mkAPI))
+	root.AddCommand(apm)
+	return root, buf
+}
+
+func TestAPMSpanMetricListTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSpanMetricsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMSpanMetricCmd(newTestSpansMetricsAPI(srv))
+	root.SetArgs([]string{"apm", "span-metric", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "COMPUTE", "FILTER", "GROUP-BY", "sm.count", "sm.duration", "service:web"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAPMSpanMetricShowOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSpanMetricGetResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMSpanMetricCmd(newTestSpansMetricsAPI(srv))
+	root.SetArgs([]string{"apm", "span-metric", "show", "sm.count"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "sm.count") {
+		t.Errorf("request path %q does not contain metric id", capturedPath)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"sm.count", "count", "service:web"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAPMSpanMetricCreateFlags(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		reqBody = body
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSpanMetricCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMSpanMetricCmd(newTestSpansMetricsAPI(srv))
+	root.SetArgs([]string{
+		"apm", "span-metric", "create",
+		"--id", "sm.new",
+		"--compute", "count",
+		"--filter", "env:prod",
+		"--group-by", "@http.status_code",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("invalid request body: %v\n%s", err, body)
+	}
+	data, _ := parsed["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatal("missing data field")
+	}
+	if got := data["id"]; got != "sm.new" {
+		t.Errorf("data.id = %v, want sm.new", got)
+	}
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if attrs == nil {
+		t.Fatal("missing data.attributes")
+	}
+	compute, _ := attrs["compute"].(map[string]interface{})
+	if compute == nil {
+		t.Fatal("missing compute field")
+	}
+	if got := compute["aggregation_type"]; got != "count" {
+		t.Errorf("compute.aggregation_type = %v, want count", got)
+	}
+	filter, _ := attrs["filter"].(map[string]interface{})
+	if filter == nil {
+		t.Fatal("missing filter field")
+	}
+	if got := filter["query"]; got != "env:prod" {
+		t.Errorf("filter.query = %v, want env:prod", got)
+	}
+}
+
+func TestAPMSpanMetricUpdateFlags(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+		reqBody     []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedReq = r
+		reqBody = body
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSpanMetricGetResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMSpanMetricCmd(newTestSpansMetricsAPI(srv))
+	root.SetArgs([]string{
+		"apm", "span-metric", "update", "sm.count",
+		"--filter", "service:checkout",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	body := reqBody
+	mu.Unlock()
+
+	if req == nil {
+		t.Fatal("no request made")
+	}
+	if !strings.Contains(req.URL.Path, "sm.count") {
+		t.Errorf("path %q does not contain sm.count", req.URL.Path)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	data, _ := parsed["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	filter, _ := attrs["filter"].(map[string]interface{})
+	if got := filter["query"]; got != "service:checkout" {
+		t.Errorf("filter.query = %v, want service:checkout", got)
+	}
+}
+
+func TestAPMSpanMetricDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMSpanMetricCmd(newTestSpansMetricsAPI(srv))
+	root.SetArgs([]string{"apm", "span-metric", "delete", "sm.count"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --yes is missing")
+	}
+}
+
+func TestAPMSpanMetricDeleteWithYes(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMSpanMetricCmd(newTestSpansMetricsAPI(srv))
+	root.SetArgs([]string{"apm", "span-metric", "delete", "sm.count", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "sm.count") {
+		t.Errorf("path %q does not contain sm.count", capturedPath)
+	}
+	if out := buf.String(); !strings.Contains(out, "deleted") {
+		t.Errorf("output missing 'deleted': %s", out)
+	}
+}
