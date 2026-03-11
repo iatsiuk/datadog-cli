@@ -1327,3 +1327,283 @@ func TestMetricsTagConfigDeleteRequiresArg(t *testing.T) {
 		t.Fatal("expected error when metric name is missing")
 	}
 }
+
+func buildMetricsTagsCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsTagsCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+func buildMetricsVolumesCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsVolumesCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+func buildMetricsAssetsCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsAssetsCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+const mockMetricsTagsResponse = `{
+	"data": {
+		"id": "system.cpu.user",
+		"type": "metrics",
+		"attributes": {
+			"tags": ["host:web-01", "env:prod"],
+			"ingested_tags": ["region:us-east-1"]
+		}
+	}
+}`
+
+const mockMetricsVolumesResponse = `{
+	"data": {
+		"id": "system.cpu.user",
+		"type": "metric_volumes",
+		"attributes": {
+			"ingested_volume": 12345,
+			"indexed_volume": 6789
+		}
+	}
+}`
+
+const mockMetricsAssetsResponse = `{
+	"data": {
+		"id": "system.cpu.user",
+		"type": "metrics"
+	},
+	"included": [
+		{
+			"type": "dashboards",
+			"id": "abc-123",
+			"attributes": {
+				"title": "System Overview",
+				"popularity": 0.5
+			}
+		},
+		{
+			"type": "monitors",
+			"id": "456",
+			"attributes": {
+				"title": "High CPU Alert"
+			}
+		}
+	]
+}`
+
+func TestMetricsTagsTableOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsTagsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagsCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tags", "system.cpu.user"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "system.cpu.user") {
+		t.Errorf("metric name not in path: %s", capturedPath)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"TAG", "TYPE", "host:web-01", "env:prod", "indexed", "region:us-east-1", "ingested"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsTagsJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsTagsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagsCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tags", "system.cpu.user", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+}
+
+func TestMetricsTagsRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsTagsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTagsCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tags"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}
+
+func TestMetricsVolumesTableOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsVolumesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsVolumesCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "volumes", "system.cpu.user"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "system.cpu.user") {
+		t.Errorf("metric name not in path: %s", capturedPath)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"FIELD", "VALUE", "12345", "6789"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsVolumesJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsVolumesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsVolumesCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "volumes", "system.cpu.user", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+}
+
+func TestMetricsVolumesRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsVolumesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsVolumesCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "volumes"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}
+
+func TestMetricsAssetsTableOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsAssetsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsAssetsCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "assets", "system.cpu.user"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "system.cpu.user") {
+		t.Errorf("metric name not in path: %s", capturedPath)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"TYPE", "ID", "TITLE", "dashboard", "abc-123", "System Overview", "monitor", "456", "High CPU Alert"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsAssetsJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsAssetsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsAssetsCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "assets", "system.cpu.user", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+}
+
+func TestMetricsAssetsRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsAssetsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsAssetsCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "assets"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}

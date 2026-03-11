@@ -58,6 +58,9 @@ func NewMetricsCommand() *cobra.Command {
 	cmd.AddCommand(newMetricsSubmitCmd(defaultMetricsV2API))
 	cmd.AddCommand(newMetricsMetadataCmd(defaultMetricsV1API))
 	cmd.AddCommand(newMetricsTagConfigCmd(defaultMetricsV2API))
+	cmd.AddCommand(newMetricsTagsCmd(defaultMetricsV2API))
+	cmd.AddCommand(newMetricsVolumesCmd(defaultMetricsV2API))
+	cmd.AddCommand(newMetricsAssetsCmd(defaultMetricsV2API))
 	return cmd
 }
 
@@ -613,6 +616,157 @@ func parseMetricPoints(rawPoints []string) ([]datadogV2.MetricPoint, error) {
 		pts = append(pts, *pt)
 	}
 	return pts, nil
+}
+
+func newMetricsTagsCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "tags <metric>",
+		Short: "List tags for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := mapi.api.ListTagsByMetricName(mapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list tags by metric name: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"TAG", "TYPE"}
+			var rows [][]string
+			if resp.Data != nil && resp.Data.Attributes != nil {
+				for _, tag := range resp.Data.Attributes.GetTags() {
+					rows = append(rows, []string{tag, "indexed"})
+				}
+				for _, tag := range resp.Data.Attributes.GetIngestedTags() {
+					rows = append(rows, []string{tag, "ingested"})
+				}
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newMetricsVolumesCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "volumes <metric>",
+		Short: "Show ingested and indexed volumes for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := mapi.api.ListVolumesByMetricName(mapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list volumes by metric name: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"FIELD", "VALUE"}
+			var rows [][]string
+			if resp.Data != nil {
+				if v := resp.Data.MetricIngestedIndexedVolume; v != nil && v.Attributes != nil {
+					if v.Attributes.IngestedVolume != nil {
+						rows = append(rows, []string{"ingested_volume", strconv.FormatInt(*v.Attributes.IngestedVolume, 10)})
+					}
+					if v.Attributes.IndexedVolume != nil {
+						rows = append(rows, []string{"indexed_volume", strconv.FormatInt(*v.Attributes.IndexedVolume, 10)})
+					}
+				} else if v := resp.Data.MetricDistinctVolume; v != nil && v.Attributes != nil {
+					if v.Attributes.DistinctVolume != nil {
+						rows = append(rows, []string{"distinct_volume", strconv.FormatInt(*v.Attributes.DistinctVolume, 10)})
+					}
+				}
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newMetricsAssetsCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "assets <metric>",
+		Short: "Show assets related to a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := mapi.api.ListMetricAssets(mapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list metric assets: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"TYPE", "ID", "TITLE"}
+			var rows [][]string
+			for _, item := range resp.GetIncluded() {
+				if d := item.MetricDashboardAsset; d != nil {
+					title := ""
+					if d.Attributes != nil {
+						title = d.Attributes.GetTitle()
+					}
+					rows = append(rows, []string{"dashboard", d.GetId(), title})
+				} else if m := item.MetricMonitorAsset; m != nil {
+					title := ""
+					if m.Attributes != nil {
+						title = m.Attributes.GetTitle()
+					}
+					rows = append(rows, []string{"monitor", m.GetId(), title})
+				} else if n := item.MetricNotebookAsset; n != nil {
+					title := ""
+					if n.Attributes != nil {
+						title = n.Attributes.GetTitle()
+					}
+					rows = append(rows, []string{"notebook", n.GetId(), title})
+				} else if s := item.MetricSLOAsset; s != nil {
+					title := ""
+					if s.Attributes != nil {
+						title = s.Attributes.GetTitle()
+					}
+					rows = append(rows, []string{"slo", s.GetId(), title})
+				}
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
 }
 
 func newMetricsTagConfigCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
