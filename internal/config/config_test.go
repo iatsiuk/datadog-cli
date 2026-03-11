@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/iatsiuk/datadog-cli/internal/config"
@@ -11,7 +12,7 @@ func TestLoadConfig(t *testing.T) {
 		name    string
 		env     map[string]string
 		want    config.Config
-		wantErr bool
+		wantErr error
 	}{
 		{
 			name: "all vars set",
@@ -41,25 +42,30 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name:    "missing DD_API_KEY",
 			env:     map[string]string{"DD_APP_KEY": "appkey456"},
-			wantErr: true,
+			wantErr: config.ErrMissingAPIKey,
 		},
 		{
 			name:    "missing DD_APP_KEY",
 			env:     map[string]string{"DD_API_KEY": "apikey123"},
-			wantErr: true,
+			wantErr: config.ErrMissingAppKey,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			// clear all keys to ensure a clean environment regardless of real env
+			t.Setenv("DD_API_KEY", "")
+			t.Setenv("DD_APP_KEY", "")
+			t.Setenv("DD_SITE", "")
+
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}
 
 			got, err := config.LoadConfig()
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected error, got nil")
+			if tc.wantErr != nil {
+				if !errors.Is(err, tc.wantErr) {
+					t.Fatalf("expected error %v, got %v", tc.wantErr, err)
 				}
 				return
 			}

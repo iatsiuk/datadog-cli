@@ -2,28 +2,29 @@ package output
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"text/tabwriter"
 )
 
 // PrintTable writes headers and rows as aligned tab-separated columns.
-func PrintTable(w io.Writer, headers []string, rows [][]string) {
+func PrintTable(w io.Writer, headers []string, rows [][]string) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	writeRow(tw, headers)
 	for _, row := range rows {
 		writeRow(tw, row)
 	}
-	tw.Flush() //nolint:errcheck
+	return tw.Flush()
 }
 
 func writeRow(w io.Writer, cols []string) {
 	for i, col := range cols {
 		if i > 0 {
-			io.WriteString(w, "\t") //nolint:errcheck
+			fmt.Fprint(w, "\t") //nolint:errcheck
 		}
-		io.WriteString(w, col) //nolint:errcheck
+		fmt.Fprint(w, col) //nolint:errcheck
 	}
-	io.WriteString(w, "\n") //nolint:errcheck
+	fmt.Fprintln(w) //nolint:errcheck
 }
 
 // PrintJSON writes v as indented JSON to w.

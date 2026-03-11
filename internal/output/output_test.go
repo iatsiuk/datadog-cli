@@ -38,7 +38,9 @@ func TestPrintTable(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var buf bytes.Buffer
-			output.PrintTable(&buf, tc.headers, tc.rows)
+			if err := output.PrintTable(&buf, tc.headers, tc.rows); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 			result := buf.String()
 			for _, s := range tc.contains {
 				if !strings.Contains(result, s) {

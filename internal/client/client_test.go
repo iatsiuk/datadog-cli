@@ -1,8 +1,9 @@
 package client_test
 
 import (
-	"context"
 	"testing"
+
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 
 	"github.com/iatsiuk/datadog-cli/internal/client"
 	"github.com/iatsiuk/datadog-cli/internal/config"
@@ -26,7 +27,7 @@ func TestNew_ReturnsClient(t *testing.T) {
 	}
 }
 
-func TestNew_ContextDerivesFromBackground(t *testing.T) {
+func TestNew_AuthKeysInContext(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.Config{
@@ -36,20 +37,20 @@ func TestNew_ContextDerivesFromBackground(t *testing.T) {
 	}
 
 	_, ctx := client.New(cfg)
-	// context must not be done
-	select {
-	case <-ctx.Done():
-		t.Fatal("context should not be done")
-	default:
-	}
 
-	// verify it derives from background (no cancellation from parent)
-	if ctx == context.Background() {
-		t.Fatal("context should be derived, not raw background")
+	keys, ok := ctx.Value(datadog.ContextAPIKeys).(map[string]datadog.APIKey)
+	if !ok {
+		t.Fatal("expected ContextAPIKeys in context")
+	}
+	if keys["apiKeyAuth"].Key != cfg.APIKey {
+		t.Errorf("apiKeyAuth: got %q, want %q", keys["apiKeyAuth"].Key, cfg.APIKey)
+	}
+	if keys["appKeyAuth"].Key != cfg.AppKey {
+		t.Errorf("appKeyAuth: got %q, want %q", keys["appKeyAuth"].Key, cfg.AppKey)
 	}
 }
 
-func TestNew_SiteInServerURL(t *testing.T) {
+func TestNew_SiteInContext(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -71,14 +72,14 @@ func TestNew_SiteInServerURL(t *testing.T) {
 				Site:   tt.site,
 			}
 
-			c, _ := client.New(cfg)
-			if c == nil {
-				t.Fatal("expected non-nil client")
+			_, ctx := client.New(cfg)
+
+			vars, ok := ctx.Value(datadog.ContextServerVariables).(map[string]string)
+			if !ok {
+				t.Fatal("expected ContextServerVariables in context")
 			}
-			// verify server host is configured with the site
-			servers := c.GetConfig().Servers
-			if len(servers) == 0 {
-				t.Fatal("expected servers to be configured")
+			if vars["site"] != tt.site {
+				t.Errorf("site: got %q, want %q", vars["site"], tt.site)
 			}
 		})
 	}
