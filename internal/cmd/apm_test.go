@@ -253,3 +253,124 @@ func TestAPMSearchDefaultFrom(t *testing.T) {
 		t.Error("filter[from] should be set when --from is omitted")
 	}
 }
+
+func buildAPMTailCmd(mkAPI func() (*spansAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	apm := &cobra.Command{Use: "apm"}
+	tail := newAPMTailCmd(mkAPI)
+	apm.AddCommand(tail)
+	root.AddCommand(apm)
+	return root, buf
+}
+
+func TestAPMTailFlagQuery(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedReqs []*http.Request
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReqs = append(capturedReqs, r)
+		callCount++
+		if callCount >= 2 {
+			cancel()
+		}
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMTailCmd(newTestSpansAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"apm", "tail", "--query", "service:web-store"})
+	// tail exits when context is cancelled; ignore the context error
+	_ = root.Execute()
+
+	mu.Lock()
+	reqs := capturedReqs
+	mu.Unlock()
+	if len(reqs) == 0 {
+		t.Fatal("no requests made to mock server")
+	}
+	if got := reqs[0].URL.Query().Get("filter[query]"); got != "service:web-store" {
+		t.Errorf("filter[query] = %q, want %q", got, "service:web-store")
+	}
+}
+
+func TestAPMTailServiceFlag(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedReqs []*http.Request
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReqs = append(capturedReqs, r)
+		callCount++
+		if callCount >= 2 {
+			cancel()
+		}
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMTailCmd(newTestSpansAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"apm", "tail", "--service", "checkout"})
+	_ = root.Execute()
+
+	mu.Lock()
+	reqs := capturedReqs
+	mu.Unlock()
+	if len(reqs) == 0 {
+		t.Fatal("no requests made")
+	}
+	// --service checkout should produce a filter query containing service:checkout
+	if got := reqs[0].URL.Query().Get("filter[query]"); !strings.Contains(got, "service:checkout") {
+		t.Errorf("filter[query] = %q, want it to contain service:checkout", got)
+	}
+}
+
+func TestAPMTailPollsAPIAndPrintsNewSpans(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		callCount++
+		if callCount == 1 {
+			fmt.Fprint(w, mockSpansResponse) //nolint:errcheck
+		} else {
+			cancel()
+			fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMTailCmd(newTestSpansAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"apm", "tail"})
+	_ = root.Execute()
+
+	out := buf.String()
+	for _, want := range []string{"web-store", "/api/users"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}

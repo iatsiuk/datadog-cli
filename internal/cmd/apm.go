@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -34,6 +35,7 @@ func NewAPMCommand() *cobra.Command {
 		Short: "Search and manage Datadog APM",
 	}
 	cmd.AddCommand(newAPMSearchCmd(defaultSpansAPI))
+	cmd.AddCommand(newAPMTailCmd(defaultSpansAPI))
 	return cmd
 }
 
@@ -146,5 +148,95 @@ func newAPMSearchCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&toStr, "to", "now", "end time, e.g. now")
 	cmd.Flags().IntVar(&limit, "limit", 50, "max number of spans to return")
 	cmd.Flags().StringVar(&sortStr, "sort", "", "sort order: timestamp or -timestamp")
+	return cmd
+}
+
+const tailPollInterval = 5 * time.Second
+
+func newAPMTailCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
+	var (
+		query   string
+		service string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "tail",
+		Short: "Tail spans in real time",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			// build effective query
+			effectiveQuery := query
+			if service != "" {
+				q := "service:" + service
+				if effectiveQuery != "" {
+					q = effectiveQuery + " " + q
+				}
+				effectiveQuery = q
+			}
+
+			// start from now
+			since := time.Now()
+
+			for {
+				now := time.Now()
+				opts := datadogV2.NewListSpansGetOptionalParameters().
+					WithFilterFrom(since.UTC().Format(time.RFC3339)).
+					WithFilterTo(now.UTC().Format(time.RFC3339)).
+					WithPageLimit(100)
+				if effectiveQuery != "" {
+					opts = opts.WithFilterQuery(effectiveQuery)
+				}
+
+				resp, httpResp, err := sapi.api.ListSpansGet(sapi.ctx, *opts)
+				if httpResp != nil {
+					_ = httpResp.Body.Close()
+				}
+				if err != nil {
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return nil
+					}
+					return fmt.Errorf("tail spans: %w", err)
+				}
+
+				for _, span := range resp.GetData() {
+					attrs := span.GetAttributes()
+					ts := ""
+					if t := attrs.StartTimestamp; t != nil {
+						ts = t.UTC().Format(time.RFC3339)
+					}
+					duration := ""
+					if attrs.StartTimestamp != nil && attrs.EndTimestamp != nil {
+						d := attrs.EndTimestamp.Sub(*attrs.StartTimestamp)
+						duration = d.String()
+					}
+					status := "ok"
+					if errVal, ok := attrs.GetAttributes()["error"]; ok {
+						if errStr, ok2 := errVal.(string); ok2 && errStr == "1" {
+							status = "error"
+						} else if errNum, ok3 := errVal.(float64); ok3 && errNum != 0 {
+							status = "error"
+						}
+					}
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n",
+						ts, attrs.GetService(), attrs.GetResourceName(), duration, status)
+				}
+
+				since = now
+
+				select {
+				case <-sapi.ctx.Done():
+					return nil
+				case <-time.After(tailPollInterval):
+				}
+			}
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "span search query")
+	cmd.Flags().StringVar(&service, "service", "", "filter by service name")
 	return cmd
 }
