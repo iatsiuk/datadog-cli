@@ -1607,3 +1607,95 @@ func TestMetricsAssetsRequiresArg(t *testing.T) {
 		t.Fatal("expected error when metric name is missing")
 	}
 }
+
+// metrics estimate tests
+
+func buildMetricsEstimateCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsEstimateCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+const mockMetricsEstimateResponse = `{
+	"data": {
+		"type": "metric_cardinality",
+		"id": "system.cpu.user",
+		"attributes": {
+			"estimate_type": "count_or_gauge",
+			"estimated_output_series": 42,
+			"estimated_at": "2026-03-12T00:00:00Z"
+		}
+	}
+}`
+
+func TestMetricsEstimateTableOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsEstimateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsEstimateCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "estimate", "system.cpu.user"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "system.cpu.user") {
+		t.Errorf("metric name not in path: %s", capturedPath)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"FIELD", "VALUE", "count_or_gauge", "42"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsEstimateJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsEstimateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsEstimateCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "estimate", "system.cpu.user", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+}
+
+func TestMetricsEstimateRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsEstimateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsEstimateCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "estimate"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}

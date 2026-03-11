@@ -61,6 +61,7 @@ func NewMetricsCommand() *cobra.Command {
 	cmd.AddCommand(newMetricsTagsCmd(defaultMetricsV2API))
 	cmd.AddCommand(newMetricsVolumesCmd(defaultMetricsV2API))
 	cmd.AddCommand(newMetricsAssetsCmd(defaultMetricsV2API))
+	cmd.AddCommand(newMetricsEstimateCmd(defaultMetricsV2API))
 	return cmd
 }
 
@@ -767,6 +768,81 @@ func newMetricsAssetsCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
 	}
+}
+
+func newMetricsEstimateCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	var (
+		filterGroups          string
+		filterNumAggregations int32
+		filterPct             bool
+		filterHoursAgo        int32
+		filterTimespanH       int32
+	)
+
+	cmd := &cobra.Command{
+		Use:   "estimate <metric>",
+		Short: "Estimate cardinality for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			opts := datadogV2.NewEstimateMetricsOutputSeriesOptionalParameters()
+			if cmd.Flags().Changed("filter-groups") {
+				opts = opts.WithFilterGroups(filterGroups)
+			}
+			if cmd.Flags().Changed("filter-num-aggregations") {
+				opts = opts.WithFilterNumAggregations(filterNumAggregations)
+			}
+			if cmd.Flags().Changed("filter-pct") {
+				opts = opts.WithFilterPct(filterPct)
+			}
+			if cmd.Flags().Changed("filter-hours-ago") {
+				opts = opts.WithFilterHoursAgo(filterHoursAgo)
+			}
+			if cmd.Flags().Changed("filter-timespan-h") {
+				opts = opts.WithFilterTimespanH(filterTimespanH)
+			}
+
+			resp, httpResp, err := mapi.api.EstimateMetricsOutputSeries(mapi.ctx, args[0], *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("estimate metrics output series: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"FIELD", "VALUE"}
+			var rows [][]string
+			if data := resp.Data; data != nil {
+				if attrs := data.Attributes; attrs != nil {
+					rows = append(rows, []string{"estimate_type", string(attrs.GetEstimateType())})
+					rows = append(rows, []string{"estimated_output_series", strconv.FormatInt(attrs.GetEstimatedOutputSeries(), 10)})
+					if t := attrs.GetEstimatedAt(); !t.IsZero() {
+						rows = append(rows, []string{"estimated_at", t.UTC().Format(time.RFC3339)})
+					}
+				}
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&filterGroups, "filter-groups", "", "tag keys to filter by (comma-separated)")
+	cmd.Flags().Int32Var(&filterNumAggregations, "filter-num-aggregations", 0, "number of aggregations")
+	cmd.Flags().BoolVar(&filterPct, "filter-pct", false, "include percentile aggregations")
+	cmd.Flags().Int32Var(&filterHoursAgo, "filter-hours-ago", 0, "number of hours ago to start")
+	cmd.Flags().Int32Var(&filterTimespanH, "filter-timespan-h", 0, "timespan in hours")
+	return cmd
 }
 
 func newMetricsTagConfigCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
