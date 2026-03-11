@@ -162,6 +162,201 @@ func TestMetricsQueryJSONOutput(t *testing.T) {
 	}
 }
 
+func buildMetricsSearchCmd(mkAPI func() (*metricsV1API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsSearchCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+func buildMetricsListCmd(mkAPI func() (*metricsV1API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsListCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+const mockMetricsSearchResponse = `{
+	"results": {
+		"metrics": ["system.cpu.user", "system.cpu.idle", "system.cpu.iowait"]
+	}
+}`
+
+const mockMetricsListResponse = `{
+	"from": "1700000000",
+	"metrics": ["custom.metric.one", "custom.metric.two"]
+}`
+
+func TestMetricsSearchQueryRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSearchResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSearchCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "search"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --query is missing")
+	}
+}
+
+func TestMetricsSearchTableOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedURL = r.URL.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSearchResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsSearchCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "search", "--query", "system.cpu"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedURL, "system.cpu") {
+		t.Errorf("query not found in URL: %s", capturedURL)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"METRIC", "system.cpu.user", "system.cpu.idle"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsSearchJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSearchResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsSearchCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "search", "--query", "system.cpu", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 3 {
+		t.Errorf("got %d metrics, want 3", len(result))
+	}
+}
+
+func TestMetricsListFromRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsListCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "list"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --from is missing")
+	}
+}
+
+func TestMetricsListTableOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedURL = r.URL.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsListCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "list", "--from", "1700000000"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedURL, "1700000000") {
+		t.Errorf("from param not found in URL: %s", capturedURL)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"METRIC", "custom.metric.one", "custom.metric.two"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsListJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsListCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "list", "--from", "1700000000", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 2 {
+		t.Errorf("got %d metrics, want 2", len(result))
+	}
+}
+
+func TestMetricsListRelativeTime(t *testing.T) {
+	t.Parallel()
+
+	var capturedURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedURL = r.URL.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"metrics":[]}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsListCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "list", "--from", "now-1h"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedURL, "from=") {
+		t.Errorf("from param not found in URL: %s", capturedURL)
+	}
+}
+
 func TestMetricsQueryRelativeTime(t *testing.T) {
 	t.Parallel()
 
