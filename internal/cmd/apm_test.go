@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -372,5 +373,148 @@ func TestAPMTailPollsAPIAndPrintsNewSpans(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+const mockSpansAggregateResponse = `{
+	"data": [{
+		"type": "bucket",
+		"attributes": {
+			"by": {"@http.status_code": "200"},
+			"computes": {"c0": 42.0}
+		}
+	}],
+	"meta": {"status": "done", "elapsed": 10, "request_id": "req-2"}
+}`
+
+func buildAPMAggregateCmd(mkAPI func() (*spansAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	apm := &cobra.Command{Use: "apm"}
+	apm.AddCommand(newAPMAggregateCmd(mkAPI))
+	root.AddCommand(apm)
+	return root, buf
+}
+
+func TestAPMAggregateFlags(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		reqBody = body
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMAggregateCmd(newTestSpansAPI(srv))
+	root.SetArgs([]string{
+		"apm", "aggregate",
+		"--query", "service:web",
+		"--from", "now-1h",
+		"--to", "now",
+		"--group-by", "@http.status_code",
+		"--compute", "count",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("invalid request body: %v\n%s", err, body)
+	}
+
+	data, _ := parsed["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatal("request missing data field")
+	}
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if attrs == nil {
+		t.Fatal("request missing data.attributes field")
+	}
+
+	filter, _ := attrs["filter"].(map[string]interface{})
+	if filter == nil {
+		t.Fatal("request missing filter")
+	}
+	if got := filter["query"]; got != "service:web" {
+		t.Errorf("filter.query = %v, want service:web", got)
+	}
+	if got := filter["from"]; got != "now-1h" {
+		t.Errorf("filter.from = %v, want now-1h", got)
+	}
+
+	groups, _ := attrs["group_by"].([]interface{})
+	if len(groups) != 1 {
+		t.Fatalf("group_by len = %d, want 1", len(groups))
+	}
+	g, _ := groups[0].(map[string]interface{})
+	if got := g["facet"]; got != "@http.status_code" {
+		t.Errorf("group_by[0].facet = %v, want @http.status_code", got)
+	}
+
+	computes, _ := attrs["compute"].([]interface{})
+	if len(computes) != 1 {
+		t.Fatalf("compute len = %d, want 1", len(computes))
+	}
+	c, _ := computes[0].(map[string]interface{})
+	if got := c["aggregation"]; got != "count" {
+		t.Errorf("compute[0].aggregation = %v, want count", got)
+	}
+}
+
+func TestAPMAggregateTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSpansAggregateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMAggregateCmd(newTestSpansAPI(srv))
+	root.SetArgs([]string{
+		"apm", "aggregate",
+		"--group-by", "@http.status_code",
+		"--compute", "count",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"@http.status_code", "200", "42"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAPMAggregateRequiresCompute(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMAggregateCmd(newTestSpansAPI(srv))
+	root.SetArgs([]string{"apm", "aggregate"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --compute is missing")
 	}
 }

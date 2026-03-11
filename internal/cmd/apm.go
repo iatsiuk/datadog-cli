@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -36,6 +37,7 @@ func NewAPMCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newAPMSearchCmd(defaultSpansAPI))
 	cmd.AddCommand(newAPMTailCmd(defaultSpansAPI))
+	cmd.AddCommand(newAPMAggregateCmd(defaultSpansAPI))
 	return cmd
 }
 
@@ -238,5 +240,135 @@ func newAPMTailCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 
 	cmd.Flags().StringVar(&query, "query", "", "span search query")
 	cmd.Flags().StringVar(&service, "service", "", "filter by service name")
+	return cmd
+}
+
+func newAPMAggregateCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
+	var (
+		query   string
+		fromStr string
+		toStr   string
+		groupBy []string
+		compute string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "aggregate",
+		Short: "Aggregate spans",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if compute == "" {
+				return fmt.Errorf("--compute is required")
+			}
+			aggFn, err := datadogV2.NewSpansAggregationFunctionFromValue(compute)
+			if err != nil {
+				return fmt.Errorf("--compute: %w", err)
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			filter := datadogV2.NewSpansQueryFilter()
+			if fromStr != "" {
+				filter.SetFrom(fromStr)
+			}
+			if toStr != "" {
+				filter.SetTo(toStr)
+			}
+			if query != "" {
+				filter.SetQuery(query)
+			}
+
+			computes := []datadogV2.SpansCompute{
+				*datadogV2.NewSpansCompute(*aggFn),
+			}
+
+			var groups []datadogV2.SpansGroupBy
+			for _, facet := range groupBy {
+				groups = append(groups, *datadogV2.NewSpansGroupBy(facet))
+			}
+
+			attrs := datadogV2.NewSpansAggregateRequestAttributes()
+			attrs.SetFilter(*filter)
+			attrs.SetCompute(computes)
+			if len(groups) > 0 {
+				attrs.SetGroupBy(groups)
+			}
+
+			data := datadogV2.NewSpansAggregateData()
+			data.SetAttributes(*attrs)
+
+			req := datadogV2.NewSpansAggregateRequest()
+			req.SetData(*data)
+
+			resp, httpResp, err := sapi.api.AggregateSpans(sapi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("aggregate spans: %w", err)
+			}
+
+			// collect all group-by and compute keys from first bucket to build headers
+			buckets := resp.GetData()
+
+			// determine group-by header names from --group-by flags
+			groupHeaders := groupBy
+			// determine compute key names from response
+			var computeKeys []string
+			if len(buckets) > 0 {
+				attrs := buckets[0].GetAttributes()
+				for k := range attrs.GetComputes() {
+					computeKeys = append(computeKeys, k)
+				}
+				sort.Strings(computeKeys)
+			}
+
+			headers := append(groupHeaders, computeKeys...)
+			if len(headers) == 0 {
+				headers = []string{"BY", "COMPUTE"}
+			}
+
+			var rows [][]string
+			for _, bucket := range buckets {
+				bAttrs := bucket.GetAttributes()
+				by := bAttrs.GetBy()
+				computes2 := bAttrs.GetComputes()
+
+				row := make([]string, 0, len(headers))
+				for _, g := range groupHeaders {
+					v := ""
+					if val, ok := by[g]; ok {
+						v = fmt.Sprintf("%v", val)
+					}
+					row = append(row, v)
+				}
+				for _, k := range computeKeys {
+					v := ""
+					if bv, ok := computes2[k]; ok {
+						switch {
+						case bv.SpansAggregateBucketValueSingleNumber != nil:
+							v = fmt.Sprintf("%g", *bv.SpansAggregateBucketValueSingleNumber)
+						case bv.SpansAggregateBucketValueSingleString != nil:
+							v = *bv.SpansAggregateBucketValueSingleString
+						case bv.SpansAggregateBucketValueTimeseries != nil:
+							v = fmt.Sprintf("%d points", len(bv.SpansAggregateBucketValueTimeseries.Items))
+						}
+					}
+					row = append(row, v)
+				}
+				rows = append(rows, row)
+			}
+
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "span search query")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time, supports date math (default: now-15m)")
+	cmd.Flags().StringVar(&toStr, "to", "", "end time, supports date math (default: now)")
+	cmd.Flags().StringSliceVar(&groupBy, "group-by", nil, "facets to group by (repeatable)")
+	cmd.Flags().StringVar(&compute, "compute", "", "aggregation function: count, sum, avg, min, max, etc.")
 	return cmd
 }
