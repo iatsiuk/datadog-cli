@@ -36,6 +36,7 @@ func NewLogsCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newLogsSearchCmd(defaultLogsAPI))
 	cmd.AddCommand(newLogsTailCmd(defaultLogsAPI))
+	cmd.AddCommand(newLogsAggregateCmd(defaultLogsAPI))
 	return cmd
 }
 
@@ -210,6 +211,189 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&service, "service", "", "filter by service name")
 	cmd.Flags().DurationVar(&interval, "interval", 5*time.Second, "polling interval")
 	return cmd
+}
+
+func newLogsAggregateCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
+	var (
+		query   string
+		fromStr string
+		toStr   string
+		groupBy string
+		compute string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "aggregate",
+		Short: "Aggregate logs",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if fromStr == "" {
+				fromStr = "now-15m"
+			}
+
+			fromTime, err := parseRelativeTime(fromStr)
+			if err != nil {
+				return fmt.Errorf("--from: %w", err)
+			}
+			toTime, err := parseRelativeTime(toStr)
+			if err != nil {
+				return fmt.Errorf("--to: %w", err)
+			}
+
+			agg, metric, err := parseComputeSpec(compute)
+			if err != nil {
+				return fmt.Errorf("--compute: %w", err)
+			}
+
+			filter := datadogV2.NewLogsQueryFilter()
+			filter.SetFrom(fromTime.Format(time.RFC3339))
+			filter.SetTo(toTime.Format(time.RFC3339))
+			if query != "" {
+				filter.SetQuery(query)
+			}
+
+			c := datadogV2.NewLogsCompute(agg)
+			if metric != "" {
+				c.SetMetric(metric)
+			}
+
+			req := datadogV2.NewLogsAggregateRequest()
+			req.SetFilter(*filter)
+			req.SetCompute([]datadogV2.LogsCompute{*c})
+
+			if groupBy != "" {
+				facets := strings.Split(groupBy, ",")
+				groups := make([]datadogV2.LogsGroupBy, 0, len(facets))
+				for _, f := range facets {
+					f = strings.TrimSpace(f)
+					if f != "" {
+						groups = append(groups, *datadogV2.NewLogsGroupBy(f))
+					}
+				}
+				req.SetGroupBy(groups)
+			}
+
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := lapi.api.AggregateLogs(lapi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("aggregate logs: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			data := resp.GetData()
+			if asJSON {
+				buckets := data.GetBuckets()
+				if buckets == nil {
+					buckets = []datadogV2.LogsAggregateBucket{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), buckets)
+			}
+
+			buckets := data.GetBuckets()
+			if len(buckets) == 0 {
+				return output.PrintTable(cmd.OutOrStdout(), nil, nil)
+			}
+
+			// build column names: group-by facets first, then compute keys
+			byKeys := sortedKeys(buckets[0].GetBy())
+			computeKeys := sortedKeys2(buckets[0].GetComputes())
+			headers := make([]string, 0, len(byKeys)+len(computeKeys))
+			for _, k := range byKeys {
+				headers = append(headers, strings.ToUpper(k))
+			}
+			for _, k := range computeKeys {
+				headers = append(headers, strings.ToUpper(k))
+			}
+
+			var rows [][]string
+			for _, b := range buckets {
+				row := make([]string, 0, len(byKeys)+len(computeKeys))
+				for _, k := range byKeys {
+					row = append(row, fmt.Sprintf("%v", b.GetBy()[k]))
+				}
+				for _, k := range computeKeys {
+					v := b.GetComputes()[k]
+					row = append(row, formatBucketValue(v))
+				}
+				rows = append(rows, row)
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "log filter query")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time (default: now-15m)")
+	cmd.Flags().StringVar(&toStr, "to", "now", "end time")
+	cmd.Flags().StringVar(&groupBy, "group-by", "", "comma-separated facets to group by")
+	cmd.Flags().StringVar(&compute, "compute", "count", "aggregation spec: <function>[:<metric>]")
+	return cmd
+}
+
+// parseComputeSpec parses "count" or "sum:@metric" into aggregation function and metric.
+func parseComputeSpec(s string) (datadogV2.LogsAggregationFunction, string, error) {
+	parts := strings.SplitN(s, ":", 2)
+	agg, err := datadogV2.NewLogsAggregationFunctionFromValue(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("unknown aggregation %q", parts[0])
+	}
+	metric := ""
+	if len(parts) == 2 {
+		metric = parts[1]
+	}
+	return *agg, metric, nil
+}
+
+// sortedKeys returns map keys in sorted order (for map[string]interface{}).
+func sortedKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sortStrings(keys)
+	return keys
+}
+
+// sortedKeys2 returns map keys in sorted order (for map[string]LogsAggregateBucketValue).
+func sortedKeys2(m map[string]datadogV2.LogsAggregateBucketValue) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sortStrings(keys)
+	return keys
+}
+
+// sortStrings sorts a string slice in place (simple insertion sort for small slices).
+func sortStrings(ss []string) {
+	for i := 1; i < len(ss); i++ {
+		for j := i; j > 0 && ss[j] < ss[j-1]; j-- {
+			ss[j], ss[j-1] = ss[j-1], ss[j]
+		}
+	}
+}
+
+func formatBucketValue(v datadogV2.LogsAggregateBucketValue) string {
+	switch {
+	case v.LogsAggregateBucketValueSingleString != nil:
+		return *v.LogsAggregateBucketValueSingleString
+	case v.LogsAggregateBucketValueSingleNumber != nil:
+		f := *v.LogsAggregateBucketValueSingleNumber
+		if f == float64(int64(f)) {
+			return fmt.Sprintf("%d", int64(f))
+		}
+		return fmt.Sprintf("%g", f)
+	default:
+		return ""
+	}
 }
 
 // parseRelativeTime parses "now", "now-<duration>", or RFC3339 into time.Time.
