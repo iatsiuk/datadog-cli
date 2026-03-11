@@ -110,6 +110,34 @@ dd logs restriction-query delete <id> --yes
 Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
 Default `--from` is `now-15m`, default `--to` is `now`.
 
+### metrics
+
+Query, submit, and manage Datadog metrics.
+
+```
+dd metrics query --query <expr> --from <unix> --to <unix>
+dd metrics search --query <q>
+dd metrics list --from <unix>
+dd metrics scalar --query <expr> --from <unix> --to <unix>
+dd metrics timeseries --query <expr> --from <unix> --to <unix>
+dd metrics submit --metric <name> --type <gauge|count|rate> --points <ts:value,...> [--tags <tag,...>]
+dd metrics metadata show <name>
+dd metrics metadata update <name> [--type <type>] [--description <text>] [--unit <unit>]
+dd metrics tag-config list [--filter-tags <tags>]
+dd metrics tag-config show <name>
+dd metrics tag-config create <name> --tags <tag,...> [--aggregations <agg,...>]
+dd metrics tag-config update <name> [--tags <tag,...>] [--aggregations <agg,...>]
+dd metrics tag-config delete <name> --yes
+dd metrics tags <name>
+dd metrics volumes <name>
+dd metrics assets <name>
+dd metrics estimate <name> [--filter-tags <tags>] [--hours <n>] [--future-months <n>]
+```
+
+`--query` accepts Datadog metric query expressions (e.g. `avg:system.cpu.user{*}`).
+`--from` / `--to` accept Unix timestamps.
+`--points` format: `timestamp:value` pairs separated by commas (e.g. `1700000000:42.0,1700000060:43.5`).
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
