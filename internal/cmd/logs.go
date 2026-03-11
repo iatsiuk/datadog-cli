@@ -156,9 +156,9 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 			q := query
 			if service != "" {
 				if q != "" {
-					q = q + " service:" + service
+					q = q + " service:\"" + service + "\""
 				} else {
-					q = "service:" + service
+					q = "service:\"" + service + "\""
 				}
 			}
 
@@ -199,12 +199,12 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 						if id == "" {
 							continue
 						}
+						nextSeen[id] = struct{}{}
 						_, inPrev := prevSeen[id]
 						_, inCurr := currSeen[id]
 						if inPrev || inCurr {
 							continue
 						}
-						nextSeen[id] = struct{}{}
 						attrs := log.GetAttributes()
 						ts := ""
 						if t := attrs.Timestamp; t != nil {

@@ -279,8 +279,8 @@ func TestLogsTailFlagService(t *testing.T) {
 	if req == nil {
 		t.Fatal("no request made to mock server")
 	}
-	if got := req.URL.Query().Get("filter[query]"); !strings.Contains(got, "service:my-svc") {
-		t.Errorf("filter[query] = %q, want it to contain %q", got, "service:my-svc")
+	if got := req.URL.Query().Get("filter[query]"); !strings.Contains(got, `service:"my-svc"`) {
+		t.Errorf("filter[query] = %q, want it to contain %q", got, `service:"my-svc"`)
 	}
 }
 
