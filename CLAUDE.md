@@ -6,6 +6,16 @@ CLI tool for querying Datadog from the terminal.
 
 ## API Reference
 
+### Logs
+
+- `datadogV2.LogsApi`: ListLogsGet (search, tail), AggregateLogs
+- `datadogV1.LogsIndexesApi`: GetAllLogIndexes, GetLogsIndex, CreateLogsIndex, UpdateLogsIndex
+- `datadogV1.LogsPipelinesApi`: ListLogsPipelines, GetLogsPipeline, CreateLogsPipeline, UpdateLogsPipeline, DeleteLogsPipeline
+- `datadogV2.LogsArchivesApi`: ListLogsArchives, GetLogsArchive, CreateLogsArchive, UpdateLogsArchive, DeleteLogsArchive
+- `datadogV2.LogsMetricsApi`: ListLogsMetrics, GetLogsMetric, CreateLogsMetric, UpdateLogsMetric, DeleteLogsMetric
+- `datadogV2.LogsCustomDestinationsApi`: ListLogsCustomDestinations, GetLogsCustomDestination, CreateLogsCustomDestination, UpdateLogsCustomDestination, DeleteLogsCustomDestination
+- `datadogV2.LogsRestrictionQueriesApi`: ListRestrictionQueries, GetRestrictionQuery, CreateRestrictionQuery, UpdateRestrictionQuery, DeleteRestrictionQuery
+
 ## Code Style
 
 ### Imports

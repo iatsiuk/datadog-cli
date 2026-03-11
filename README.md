@@ -65,6 +65,51 @@ Flags:
   -h, --help    Show help
 ```
 
+## Commands
+
+### logs
+
+Search and manage Datadog logs.
+
+```
+dd logs search [--query <query>] [--from <time>] [--to <time>] [--limit <n>]
+dd logs tail [--query <query>] [--service <name>] [--interval <duration>]
+dd logs aggregate --compute <fn>[:<metric>] [--query <query>] [--from <time>] [--to <time>] [--group-by <facets>]
+dd logs index list
+dd logs index show <name>
+dd logs index create --name <name> --filter <query> [--retention <days>]
+dd logs index update <name> [--filter <query>] [--retention <days>] [--enabled]
+dd logs index delete <name> --yes
+dd logs pipeline list
+dd logs pipeline show <id>
+dd logs pipeline create --name <name> [--filter <query>] [--enabled]
+dd logs pipeline update <id> [--name <name>] [--filter <query>] [--enabled]
+dd logs pipeline delete <id> --yes
+dd logs archive list
+dd logs archive show <id>
+dd logs archive create --name <name> --type <s3|azure|gcs> [destination flags]
+dd logs archive update <id> [--name <name>] [destination flags]
+dd logs archive delete <id> --yes
+dd logs metric list
+dd logs metric show <id>
+dd logs metric create --id <id> --compute-type <count|distribution> [--path <path>] --filter <query> [--group-by <facets>]
+dd logs metric update <id> [--filter <query>] [--group-by <facets>]
+dd logs metric delete <id> --yes
+dd logs custom-destination list
+dd logs custom-destination show <id>
+dd logs custom-destination create --name <name> --type <http|splunk|elasticsearch> [destination flags]
+dd logs custom-destination update <id> [--name <name>] [destination flags]
+dd logs custom-destination delete <id> --yes
+dd logs restriction-query list
+dd logs restriction-query show <id>
+dd logs restriction-query create --query <query>
+dd logs restriction-query update <id> --query <query>
+dd logs restriction-query delete <id> --yes
+```
+
+Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
+Default `--from` is `now-15m`, default `--to` is `now`.
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
