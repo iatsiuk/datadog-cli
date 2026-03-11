@@ -1004,3 +1004,326 @@ func TestMetricsQueryRelativeTime(t *testing.T) {
 		t.Errorf("from param not found in URL: %s", capturedURL)
 	}
 }
+
+func buildMetricsTagConfigCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsTagConfigCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+const mockTagConfigListResponse = `{
+	"data": [
+		{
+			"type": "manage_tags",
+			"id": "system.cpu.user",
+			"attributes": {
+				"metric_type": "gauge",
+				"tags": ["env", "host"]
+			}
+		}
+	]
+}`
+
+const mockTagConfigShowResponse = `{
+	"data": {
+		"type": "manage_tags",
+		"id": "system.cpu.user",
+		"attributes": {
+			"metric_type": "gauge",
+			"tags": ["env", "host"]
+		}
+	}
+}`
+
+const mockTagConfigCreateResponse = `{
+	"data": {
+		"type": "manage_tags",
+		"id": "custom.metric",
+		"attributes": {
+			"metric_type": "gauge",
+			"tags": ["env"]
+		}
+	}
+}`
+
+const mockTagConfigUpdateResponse = `{
+	"data": {
+		"type": "manage_tags",
+		"id": "custom.metric",
+		"attributes": {
+			"metric_type": "gauge",
+			"tags": ["env", "region"]
+		}
+	}
+}`
+
+func TestMetricsTagConfigListTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"METRIC", "TYPE", "TAGS", "system.cpu.user", "gauge", "env"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsTagConfigListJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "list", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d items, want 1", len(result))
+	}
+}
+
+func TestMetricsTagConfigShowTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "show", "system.cpu.user"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"FIELD", "VALUE", "gauge", "env", "host"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsTagConfigShowRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "show"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}
+
+func TestMetricsTagConfigShowJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "show", "system.cpu.user", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+}
+
+func TestMetricsTagConfigCreateFlagsParsed(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "create", "custom.metric",
+		"--tags", "env",
+		"--tags", "host",
+		"--metric-type", "gauge",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedBody, "custom.metric") {
+		t.Errorf("metric name not found in request body: %s", capturedBody)
+	}
+	if !strings.Contains(capturedBody, "env") {
+		t.Errorf("tag not found in request body: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "created") {
+		t.Errorf("output missing 'created': %s", buf.String())
+	}
+}
+
+func TestMetricsTagConfigCreateRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "create"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}
+
+func TestMetricsTagConfigUpdateFlagsParsed(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "update", "custom.metric",
+		"--tags", "env",
+		"--tags", "region",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedBody, "custom.metric") {
+		t.Errorf("metric name not found in request body: %s", capturedBody)
+	}
+	if !strings.Contains(capturedBody, "region") {
+		t.Errorf("tag not found in request body: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "updated") {
+		t.Errorf("output missing 'updated': %s", buf.String())
+	}
+}
+
+func TestMetricsTagConfigUpdateRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "update"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}
+
+func TestMetricsTagConfigDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "delete", "custom.metric"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --yes is missing")
+	}
+}
+
+func TestMetricsTagConfigDeleteWithYes(t *testing.T) {
+	t.Parallel()
+
+	var capturedMethod string
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "delete", "custom.metric", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if capturedMethod != http.MethodDelete {
+		t.Errorf("expected DELETE, got %s", capturedMethod)
+	}
+	if !strings.Contains(capturedPath, "custom.metric") {
+		t.Errorf("metric name not found in path: %s", capturedPath)
+	}
+	if !strings.Contains(buf.String(), "deleted") {
+		t.Errorf("output missing 'deleted': %s", buf.String())
+	}
+}
+
+func TestMetricsTagConfigDeleteRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "delete"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}

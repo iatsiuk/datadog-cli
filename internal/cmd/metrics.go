@@ -57,6 +57,7 @@ func NewMetricsCommand() *cobra.Command {
 	cmd.AddCommand(newMetricsTimeseriesCmd(defaultMetricsV2API))
 	cmd.AddCommand(newMetricsSubmitCmd(defaultMetricsV2API))
 	cmd.AddCommand(newMetricsMetadataCmd(defaultMetricsV1API))
+	cmd.AddCommand(newMetricsTagConfigCmd(defaultMetricsV2API))
 	return cmd
 }
 
@@ -612,6 +613,230 @@ func parseMetricPoints(rawPoints []string) ([]datadogV2.MetricPoint, error) {
 		pts = append(pts, *pt)
 	}
 	return pts, nil
+}
+
+func newMetricsTagConfigCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "tag-config",
+		Short: "Manage metric tag configurations",
+	}
+	cmd.AddCommand(newMetricsTagConfigListCmd(mkAPI))
+	cmd.AddCommand(newMetricsTagConfigShowCmd(mkAPI))
+	cmd.AddCommand(newMetricsTagConfigCreateCmd(mkAPI))
+	cmd.AddCommand(newMetricsTagConfigUpdateCmd(mkAPI))
+	cmd.AddCommand(newMetricsTagConfigDeleteCmd(mkAPI))
+	return cmd
+}
+
+func newMetricsTagConfigListCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List tag configurations",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := mapi.api.ListTagConfigurations(mapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list tag configurations: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			headers := []string{"METRIC", "TYPE", "TAGS"}
+			var rows [][]string
+			for _, item := range resp.GetData() {
+				tc := item.MetricTagConfiguration
+				if tc == nil {
+					continue
+				}
+				name := tc.GetId()
+				metricType := ""
+				tags := ""
+				if attrs := tc.Attributes; attrs != nil {
+					metricType = string(attrs.GetMetricType())
+					tags = strings.Join(attrs.GetTags(), ", ")
+				}
+				rows = append(rows, []string{name, metricType, tags})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newMetricsTagConfigShowCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <metric>",
+		Short: "Show tag configuration for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := mapi.api.ListTagConfigurationByName(mapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get tag configuration: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			metricType := ""
+			tags := ""
+			if data := resp.Data; data != nil {
+				if attrs := data.Attributes; attrs != nil {
+					metricType = string(attrs.GetMetricType())
+					tags = strings.Join(attrs.GetTags(), ", ")
+				}
+			}
+
+			headers := []string{"FIELD", "VALUE"}
+			rows := [][]string{
+				{"metric", resp.Data.GetId()},
+				{"type", metricType},
+				{"tags", tags},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newMetricsTagConfigCreateCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	var (
+		tags       []string
+		metricType string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create <metric>",
+		Short: "Create a tag configuration for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mt, err := datadogV2.NewMetricTagConfigurationMetricTypesFromValue(metricType)
+			if err != nil {
+				return fmt.Errorf("--metric-type: %w", err)
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewMetricTagConfigurationCreateAttributes(*mt, tags)
+			data := datadogV2.NewMetricTagConfigurationCreateData(args[0], datadogV2.METRICTAGCONFIGURATIONTYPE_MANAGE_TAGS)
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewMetricTagConfigurationCreateRequest(*data)
+
+			_, httpResp, err := mapi.api.CreateTagConfiguration(mapi.ctx, args[0], *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create tag configuration: %w", err)
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "created")
+			return err
+		},
+	}
+
+	cmd.Flags().StringArrayVar(&tags, "tags", nil, "tag keys to include (repeatable)")
+	cmd.Flags().StringVar(&metricType, "metric-type", "gauge", "metric type: gauge, count, rate, distribution")
+	return cmd
+}
+
+func newMetricsTagConfigUpdateCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	var tags []string
+
+	cmd := &cobra.Command{
+		Use:   "update <metric>",
+		Short: "Update a tag configuration for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewMetricTagConfigurationUpdateAttributes()
+			if cmd.Flags().Changed("tags") {
+				attrs.SetTags(tags)
+			}
+
+			data := datadogV2.NewMetricTagConfigurationUpdateData(args[0], datadogV2.METRICTAGCONFIGURATIONTYPE_MANAGE_TAGS)
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewMetricTagConfigurationUpdateRequest(*data)
+
+			_, httpResp, err := mapi.api.UpdateTagConfiguration(mapi.ctx, args[0], *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update tag configuration: %w", err)
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "updated")
+			return err
+		},
+	}
+
+	cmd.Flags().StringArrayVar(&tags, "tags", nil, "tag keys to include (repeatable)")
+	return cmd
+}
+
+func newMetricsTagConfigDeleteCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "delete <metric>",
+		Short: "Delete a tag configuration for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fmt.Errorf("pass --yes to confirm deletion of tag configuration for %q", args[0])
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := mapi.api.DeleteTagConfiguration(mapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete tag configuration: %w", err)
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "deleted")
+			return err
+		},
+	}
+
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
 }
 
 // parseUnixOrRelative parses a unix timestamp string or relative time expression.
