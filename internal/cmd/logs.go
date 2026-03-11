@@ -430,6 +430,9 @@ func parseRelativeTime(s string) (time.Time, error) {
 		if err != nil {
 			return time.Time{}, fmt.Errorf("invalid relative time %q: %w", s, err)
 		}
+		if d <= 0 {
+			return time.Time{}, fmt.Errorf("invalid relative time %q: duration must be positive", s)
+		}
 		return time.Now().Add(-d), nil
 	}
 	return time.Parse(time.RFC3339, s)

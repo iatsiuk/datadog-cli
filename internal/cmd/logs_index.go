@@ -207,8 +207,9 @@ func newLogsIndexUpdateCmd(mkAPI func() (*logsIndexAPI, error)) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&filter, "filter", "", "log filter query")
+	cmd.Flags().StringVar(&filter, "filter", "", "log filter query (required)")
 	cmd.Flags().Int64Var(&retention, "retention", 0, "retention in days")
+	_ = cmd.MarkFlagRequired("filter")
 	return cmd
 }
 
