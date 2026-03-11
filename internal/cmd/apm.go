@@ -315,13 +315,16 @@ func newAPMAggregateCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 				return err
 			}
 
+			if fromStr == "" {
+				fromStr = "now-15m"
+			}
+			if toStr == "" {
+				toStr = "now"
+			}
+
 			filter := datadogV2.NewSpansQueryFilter()
-			if fromStr != "" {
-				filter.SetFrom(fromStr)
-			}
-			if toStr != "" {
-				filter.SetTo(toStr)
-			}
+			filter.SetFrom(fromStr)
+			filter.SetTo(toStr)
 			if query != "" {
 				filter.SetQuery(query)
 			}
@@ -414,8 +417,8 @@ func newAPMAggregateCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&query, "query", "", "span search query")
-	cmd.Flags().StringVar(&fromStr, "from", "", "start time, supports date math (default: now-15m)")
-	cmd.Flags().StringVar(&toStr, "to", "", "end time, supports date math (default: now)")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time, supports date math (default now-15m)")
+	cmd.Flags().StringVar(&toStr, "to", "", "end time, supports date math (default now)")
 	cmd.Flags().StringSliceVar(&groupBy, "group-by", nil, "facets to group by (repeatable)")
 	cmd.Flags().StringVar(&compute, "compute", "", "aggregation function: count, sum, avg, min, max, etc.")
 	return cmd
