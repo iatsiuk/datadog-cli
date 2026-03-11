@@ -628,3 +628,289 @@ func TestAPMServicesRequiresEnv(t *testing.T) {
 		t.Error("expected error when --env is missing")
 	}
 }
+
+// retention filter mock responses
+const mockRetentionFiltersListResponse = `{
+	"data": [
+		{
+			"id": "rf-1",
+			"type": "apm_retention_filter",
+			"attributes": {
+				"name": "errors filter",
+				"filter": {"query": "status:error"},
+				"rate": 1.0,
+				"enabled": true,
+				"filter_type": "spans-errors-sampling-processor"
+			}
+		},
+		{
+			"id": "rf-2",
+			"type": "apm_retention_filter",
+			"attributes": {
+				"name": "sample filter",
+				"filter": {"query": "*"},
+				"rate": 0.1,
+				"enabled": false,
+				"filter_type": "spans-sampling-processor"
+			}
+		}
+	]
+}`
+
+const mockRetentionFilterGetResponse = `{
+	"data": {
+		"id": "rf-1",
+		"type": "apm_retention_filter",
+		"attributes": {
+			"name": "errors filter",
+			"filter": {"query": "status:error"},
+			"rate": 1.0,
+			"enabled": true,
+			"filter_type": "spans-errors-sampling-processor"
+		}
+	}
+}`
+
+const mockRetentionFilterCreateResponse = `{
+	"data": {
+		"id": "rf-new",
+		"type": "apm_retention_filter",
+		"attributes": {
+			"name": "new filter",
+			"filter": {"query": "service:web"},
+			"rate": 0.5,
+			"enabled": true,
+			"filter_type": "spans-sampling-processor"
+		}
+	}
+}`
+
+func newTestRetentionFiltersAPI(srv *httptest.Server) func() (*retentionFiltersAPI, error) {
+	return func() (*retentionFiltersAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &retentionFiltersAPI{api: datadogV2.NewAPMRetentionFiltersApi(c), ctx: apiCtx}, nil
+	}
+}
+
+func buildAPMRetentionFilterCmd(mkAPI func() (*retentionFiltersAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	apm := &cobra.Command{Use: "apm"}
+	apm.AddCommand(newAPMRetentionFilterCmd(mkAPI))
+	root.AddCommand(apm)
+	return root, buf
+}
+
+func TestAPMRetentionFilterListTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRetentionFiltersListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMRetentionFilterCmd(newTestRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"apm", "retention-filter", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"NAME", "FILTER", "RATE", "ENABLED", "errors filter", "status:error", "sample filter"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAPMRetentionFilterShowOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRetentionFilterGetResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMRetentionFilterCmd(newTestRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"apm", "retention-filter", "show", "rf-1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "rf-1") {
+		t.Errorf("request path %q does not contain filter id", capturedPath)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"errors filter", "status:error", "1", "true"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAPMRetentionFilterCreateFlags(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		reqBody = body
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRetentionFilterCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMRetentionFilterCmd(newTestRetentionFiltersAPI(srv))
+	root.SetArgs([]string{
+		"apm", "retention-filter", "create",
+		"--name", "new filter",
+		"--filter", "service:web",
+		"--rate", "0.5",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("invalid request body: %v\n%s", err, body)
+	}
+	data, _ := parsed["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatal("missing data field")
+	}
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if attrs == nil {
+		t.Fatal("missing data.attributes")
+	}
+	if got := attrs["name"]; got != "new filter" {
+		t.Errorf("name = %v, want new filter", got)
+	}
+	filter, _ := attrs["filter"].(map[string]interface{})
+	if filter == nil {
+		t.Fatal("missing filter field")
+	}
+	if got := filter["query"]; got != "service:web" {
+		t.Errorf("filter.query = %v, want service:web", got)
+	}
+	if got, _ := attrs["rate"].(float64); got != 0.5 {
+		t.Errorf("rate = %v, want 0.5", got)
+	}
+}
+
+func TestAPMRetentionFilterUpdateFlags(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+		reqBody     []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedReq = r
+		reqBody = body
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRetentionFilterGetResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMRetentionFilterCmd(newTestRetentionFiltersAPI(srv))
+	root.SetArgs([]string{
+		"apm", "retention-filter", "update", "rf-1",
+		"--name", "updated filter",
+		"--filter", "status:error",
+		"--rate", "1.0",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	body := reqBody
+	mu.Unlock()
+
+	if req == nil {
+		t.Fatal("no request made")
+	}
+	if !strings.Contains(req.URL.Path, "rf-1") {
+		t.Errorf("path %q does not contain rf-1", req.URL.Path)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	data, _ := parsed["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["name"]; got != "updated filter" {
+		t.Errorf("name = %v, want updated filter", got)
+	}
+}
+
+func TestAPMRetentionFilterDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMRetentionFilterCmd(newTestRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"apm", "retention-filter", "delete", "rf-1"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --yes is missing")
+	}
+}
+
+func TestAPMRetentionFilterDeleteWithYes(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMRetentionFilterCmd(newTestRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"apm", "retention-filter", "delete", "rf-1", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "rf-1") {
+		t.Errorf("path %q does not contain rf-1", capturedPath)
+	}
+}

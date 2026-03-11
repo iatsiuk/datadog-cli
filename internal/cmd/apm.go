@@ -43,6 +43,20 @@ func defaultAPMAPI() (*apmAPI, error) {
 	return &apmAPI{api: datadogV2.NewAPMApi(c), ctx: ctx}, nil
 }
 
+type retentionFiltersAPI struct {
+	api *datadogV2.APMRetentionFiltersApi
+	ctx context.Context
+}
+
+func defaultRetentionFiltersAPI() (*retentionFiltersAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &retentionFiltersAPI{api: datadogV2.NewAPMRetentionFiltersApi(c), ctx: ctx}, nil
+}
+
 // NewAPMCommand returns the apm cobra command group.
 func NewAPMCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -53,6 +67,7 @@ func NewAPMCommand() *cobra.Command {
 	cmd.AddCommand(newAPMTailCmd(defaultSpansAPI))
 	cmd.AddCommand(newAPMAggregateCmd(defaultSpansAPI))
 	cmd.AddCommand(newAPMServicesCmd(defaultAPMAPI))
+	cmd.AddCommand(newAPMRetentionFilterCmd(defaultRetentionFiltersAPI))
 	return cmd
 }
 
@@ -425,5 +440,282 @@ func newAPMServicesCmd(mkAPI func() (*apmAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&env, "env", "", "environment name (required)")
+	return cmd
+}
+
+func newAPMRetentionFilterCmd(mkAPI func() (*retentionFiltersAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "retention-filter",
+		Short: "Manage APM retention filters",
+	}
+	cmd.AddCommand(newRetentionFilterListCmd(mkAPI))
+	cmd.AddCommand(newRetentionFilterShowCmd(mkAPI))
+	cmd.AddCommand(newRetentionFilterCreateCmd(mkAPI))
+	cmd.AddCommand(newRetentionFilterUpdateCmd(mkAPI))
+	cmd.AddCommand(newRetentionFilterDeleteCmd(mkAPI))
+	return cmd
+}
+
+func newRetentionFilterListCmd(mkAPI func() (*retentionFiltersAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List retention filters",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := rapi.api.ListApmRetentionFilters(rapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list retention filters: %w", err)
+			}
+			headers := []string{"ID", "NAME", "FILTER", "RATE", "ENABLED"}
+			var rows [][]string
+			for _, f := range resp.GetData() {
+				attrs := f.GetAttributes()
+				filterQuery := ""
+				if fl := attrs.Filter; fl != nil {
+					filterQuery = fl.GetQuery()
+				}
+				rate := ""
+				if r := attrs.Rate; r != nil {
+					rate = fmt.Sprintf("%g", *r)
+				}
+				enabled := ""
+				if e := attrs.Enabled; e != nil {
+					enabled = fmt.Sprintf("%v", *e)
+				}
+				rows = append(rows, []string{
+					f.GetId(),
+					attrs.GetName(),
+					filterQuery,
+					rate,
+					enabled,
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newRetentionFilterShowCmd(mkAPI func() (*retentionFiltersAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show a retention filter",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := rapi.api.GetApmRetentionFilter(rapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get retention filter: %w", err)
+			}
+			f := resp.GetData()
+			attrs := f.GetAttributes()
+			filterQuery := ""
+			if fl := attrs.Filter; fl != nil {
+				filterQuery = fl.GetQuery()
+			}
+			rate := ""
+			if r := attrs.Rate; r != nil {
+				rate = fmt.Sprintf("%g", *r)
+			}
+			enabled := ""
+			if e := attrs.Enabled; e != nil {
+				enabled = fmt.Sprintf("%v", *e)
+			}
+			headers := []string{"ID", "NAME", "FILTER", "RATE", "ENABLED"}
+			rows := [][]string{{f.GetId(), attrs.GetName(), filterQuery, rate, enabled}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newRetentionFilterCreateCmd(mkAPI func() (*retentionFiltersAPI, error)) *cobra.Command {
+	var (
+		name       string
+		filterExpr string
+		rate       float64
+		enabled    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a retention filter",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+			if filterExpr == "" {
+				return fmt.Errorf("--filter is required")
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			spansFilter := datadogV2.NewSpansFilterCreate(filterExpr)
+			attrs := datadogV2.NewRetentionFilterCreateAttributes(
+				enabled,
+				*spansFilter,
+				datadogV2.RETENTIONFILTERTYPE_SPANS_SAMPLING_PROCESSOR,
+				name,
+				rate,
+			)
+			data := datadogV2.NewRetentionFilterCreateData(
+				*attrs,
+				datadogV2.APMRETENTIONFILTERTYPE_apm_retention_filter,
+			)
+			req := datadogV2.NewRetentionFilterCreateRequest(*data)
+
+			resp, httpResp, err := rapi.api.CreateApmRetentionFilter(rapi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create retention filter: %w", err)
+			}
+
+			f := resp.GetData()
+			rattrs := f.GetAttributes()
+			filterQuery := ""
+			if fl := rattrs.Filter; fl != nil {
+				filterQuery = fl.GetQuery()
+			}
+			rrate := ""
+			if r := rattrs.Rate; r != nil {
+				rrate = fmt.Sprintf("%g", *r)
+			}
+			renabled := ""
+			if e := rattrs.Enabled; e != nil {
+				renabled = fmt.Sprintf("%v", *e)
+			}
+			headers := []string{"ID", "NAME", "FILTER", "RATE", "ENABLED"}
+			rows := [][]string{{f.GetId(), rattrs.GetName(), filterQuery, rrate, renabled}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "filter name (required)")
+	cmd.Flags().StringVar(&filterExpr, "filter", "", "span search query (required)")
+	cmd.Flags().Float64Var(&rate, "rate", 1.0, "sample rate (0.0-1.0)")
+	cmd.Flags().BoolVar(&enabled, "enabled", true, "whether filter is enabled")
+	return cmd
+}
+
+func newRetentionFilterUpdateCmd(mkAPI func() (*retentionFiltersAPI, error)) *cobra.Command {
+	var (
+		name       string
+		filterExpr string
+		rate       float64
+		enabled    bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update a retention filter",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+			if filterExpr == "" {
+				return fmt.Errorf("--filter is required")
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			spansFilter := datadogV2.NewSpansFilterCreate(filterExpr)
+			attrs := datadogV2.NewRetentionFilterUpdateAttributes(
+				enabled,
+				*spansFilter,
+				datadogV2.RETENTIONFILTERALLTYPE_SPANS_SAMPLING_PROCESSOR,
+				name,
+				rate,
+			)
+			data := datadogV2.NewRetentionFilterUpdateData(
+				*attrs,
+				args[0],
+				datadogV2.APMRETENTIONFILTERTYPE_apm_retention_filter,
+			)
+			req := datadogV2.NewRetentionFilterUpdateRequest(*data)
+
+			resp, httpResp, err := rapi.api.UpdateApmRetentionFilter(rapi.ctx, args[0], *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update retention filter: %w", err)
+			}
+
+			f := resp.GetData()
+			rattrs := f.GetAttributes()
+			filterQuery := ""
+			if fl := rattrs.Filter; fl != nil {
+				filterQuery = fl.GetQuery()
+			}
+			rrate := ""
+			if r := rattrs.Rate; r != nil {
+				rrate = fmt.Sprintf("%g", *r)
+			}
+			renabled := ""
+			if e := rattrs.Enabled; e != nil {
+				renabled = fmt.Sprintf("%v", *e)
+			}
+			headers := []string{"ID", "NAME", "FILTER", "RATE", "ENABLED"}
+			rows := [][]string{{f.GetId(), rattrs.GetName(), filterQuery, rrate, renabled}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "filter name (required)")
+	cmd.Flags().StringVar(&filterExpr, "filter", "", "span search query (required)")
+	cmd.Flags().Float64Var(&rate, "rate", 1.0, "sample rate (0.0-1.0)")
+	cmd.Flags().BoolVar(&enabled, "enabled", true, "whether filter is enabled")
+	return cmd
+}
+
+func newRetentionFilterDeleteCmd(mkAPI func() (*retentionFiltersAPI, error)) *cobra.Command {
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a retention filter",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fmt.Errorf("pass --yes to confirm deletion")
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := rapi.api.DeleteApmRetentionFilter(rapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete retention filter: %w", err)
+			}
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "deleted")
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
 }
