@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
@@ -31,20 +32,24 @@ const mockLogsResponse = `{
 }`
 
 func newTestLogsAPI(srv *httptest.Server) func() (*logsAPI, error) {
+	return newTestLogsAPIWithCtx(srv, context.Background())
+}
+
+func newTestLogsAPIWithCtx(srv *httptest.Server, ctx context.Context) func() (*logsAPI, error) {
 	return func() (*logsAPI, error) {
 		cfg := datadog.NewConfiguration()
 		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
 		cfg.Debug = false
 		c := datadog.NewAPIClient(cfg)
-		ctx := context.WithValue(
-			context.Background(),
+		apiCtx := context.WithValue(
+			ctx,
 			datadog.ContextAPIKeys,
 			map[string]datadog.APIKey{
 				"apiKeyAuth": {Key: "test"},
 				"appKeyAuth": {Key: "test"},
 			},
 		)
-		return &logsAPI{api: datadogV2.NewLogsApi(c), ctx: ctx}, nil
+		return &logsAPI{api: datadogV2.NewLogsApi(c), ctx: apiCtx}, nil
 	}
 }
 
@@ -188,5 +193,138 @@ func TestLogsSearchDefaultFrom(t *testing.T) {
 	}
 	if q := capturedReq.URL.Query().Get("filter[from]"); q == "" {
 		t.Error("filter[from] should be set when --from is omitted")
+	}
+}
+
+// buildTailCmd sets up a root -> logs -> tail command tree for testing.
+func buildTailCmd(mkAPI func() (*logsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	logs := &cobra.Command{Use: "logs"}
+	tail := newLogsTailCmd(mkAPI)
+	logs.AddCommand(tail)
+	root.AddCommand(logs)
+	return root, buf
+}
+
+func TestLogsTailFlagQuery(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+		cancel()
+	}))
+	defer srv.Close()
+
+	root, _ := buildTailCmd(newTestLogsAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"logs", "tail", "--query", "service:web", "--interval", "1ms"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if got := req.URL.Query().Get("filter[query]"); got != "service:web" {
+		t.Errorf("filter[query] = %q, want %q", got, "service:web")
+	}
+}
+
+func TestLogsTailFlagService(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+		cancel()
+	}))
+	defer srv.Close()
+
+	root, _ := buildTailCmd(newTestLogsAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"logs", "tail", "--service", "my-svc", "--interval", "1ms"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if got := req.URL.Query().Get("filter[query]"); !strings.Contains(got, "service:my-svc") {
+		t.Errorf("filter[query] = %q, want it to contain %q", got, "service:my-svc")
+	}
+}
+
+func TestLogsTailPolling(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var mu sync.Mutex
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		callCount++
+		cc := callCount
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		if cc == 1 {
+			fmt.Fprint(w, mockLogsResponse) //nolint:errcheck
+		} else {
+			fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+			cancel()
+		}
+	}))
+	defer srv.Close()
+
+	root, buf := buildTailCmd(newTestLogsAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"logs", "tail", "--interval", "1ms"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	calls := callCount
+	mu.Unlock()
+	if calls < 2 {
+		t.Errorf("expected at least 2 API calls for polling, got %d", calls)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"web-service", "info", "Test log message"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
 }

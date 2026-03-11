@@ -35,6 +35,7 @@ func NewLogsCommand() *cobra.Command {
 		Short: "Search and manage Datadog logs",
 	}
 	cmd.AddCommand(newLogsSearchCmd(defaultLogsAPI))
+	cmd.AddCommand(newLogsTailCmd(defaultLogsAPI))
 	return cmd
 }
 
@@ -121,6 +122,93 @@ func newLogsSearchCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&fromStr, "from", "", "start time, e.g. now-15m (default: now-15m)")
 	cmd.Flags().StringVar(&toStr, "to", "now", "end time, e.g. now")
 	cmd.Flags().IntVar(&limit, "limit", 50, "max number of logs to return")
+	return cmd
+}
+
+func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
+	var (
+		query    string
+		service  string
+		interval time.Duration
+	)
+
+	cmd := &cobra.Command{
+		Use:   "tail",
+		Short: "Tail logs in real time",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			q := query
+			if service != "" {
+				if q != "" {
+					q = q + " service:" + service
+				} else {
+					q = "service:" + service
+				}
+			}
+
+			from := time.Now().Add(-15 * time.Minute)
+			seen := map[string]struct{}{}
+
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+
+			for {
+				to := time.Now()
+				opts := datadogV2.NewListLogsGetOptionalParameters().
+					WithFilterFrom(from).
+					WithFilterTo(to).
+					WithPageLimit(100)
+				if q != "" {
+					opts = opts.WithFilterQuery(q)
+				}
+
+				resp, httpResp, apiErr := lapi.api.ListLogsGet(lapi.ctx, *opts)
+				if httpResp != nil {
+					_ = httpResp.Body.Close()
+				}
+				if apiErr != nil {
+					if lapi.ctx.Err() != nil {
+						return nil
+					}
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
+				} else {
+					for _, log := range resp.GetData() {
+						id := log.GetId()
+						if _, ok := seen[id]; ok {
+							continue
+						}
+						seen[id] = struct{}{}
+						attrs := log.GetAttributes()
+						ts := ""
+						if t := attrs.Timestamp; t != nil {
+							ts = t.UTC().Format(time.RFC3339)
+						}
+						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s  %s\n",
+							ts,
+							attrs.GetService(),
+							attrs.GetStatus(),
+							attrs.GetMessage(),
+						)
+					}
+					from = to
+				}
+
+				select {
+				case <-lapi.ctx.Done():
+					return nil
+				case <-ticker.C:
+				}
+			}
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "log filter query")
+	cmd.Flags().StringVar(&service, "service", "", "filter by service name")
+	cmd.Flags().DurationVar(&interval, "interval", 5*time.Second, "polling interval")
 	return cmd
 }
 
