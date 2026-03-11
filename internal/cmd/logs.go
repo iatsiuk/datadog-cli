@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -76,6 +78,9 @@ func newLogsSearchCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 				return err
 			}
 
+			if limit <= 0 || limit > math.MaxInt32 {
+				return fmt.Errorf("--limit must be between 1 and %d", math.MaxInt32)
+			}
 			pageLimit := int32(limit) //nolint:gosec
 			opts := datadogV2.NewListLogsGetOptionalParameters().
 				WithFilterFrom(fromTime).
@@ -160,6 +165,9 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 			from := time.Now().Add(-15 * time.Minute)
 			seen := map[string]struct{}{}
 
+			if interval <= 0 {
+				return fmt.Errorf("--interval must be positive")
+			}
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 
@@ -185,10 +193,12 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 				} else {
 					for _, log := range resp.GetData() {
 						id := log.GetId()
-						if _, ok := seen[id]; ok {
-							continue
+						if id != "" {
+							if _, ok := seen[id]; ok {
+								continue
+							}
+							seen[id] = struct{}{}
 						}
-						seen[id] = struct{}{}
 						attrs := log.GetAttributes()
 						ts := ""
 						if t := attrs.Timestamp; t != nil {
@@ -311,7 +321,7 @@ func newLogsAggregateCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 
 			// build column names: group-by facets first, then compute keys
 			byKeys := sortedKeys(buckets[0].GetBy())
-			computeKeys := sortedKeys2(buckets[0].GetComputes())
+			computeKeys := sortedKeysFromBuckets(buckets[0].GetComputes())
 			headers := make([]string, 0, len(byKeys)+len(computeKeys))
 			for _, k := range byKeys {
 				headers = append(headers, strings.ToUpper(k))
@@ -364,27 +374,18 @@ func sortedKeys(m map[string]interface{}) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sortStrings(keys)
+	sort.Strings(keys)
 	return keys
 }
 
-// sortedKeys2 returns map keys in sorted order (for map[string]LogsAggregateBucketValue).
-func sortedKeys2(m map[string]datadogV2.LogsAggregateBucketValue) []string {
+// sortedKeysFromBuckets returns map keys in sorted order (for map[string]LogsAggregateBucketValue).
+func sortedKeysFromBuckets(m map[string]datadogV2.LogsAggregateBucketValue) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sortStrings(keys)
+	sort.Strings(keys)
 	return keys
-}
-
-// sortStrings sorts a string slice in place (simple insertion sort for small slices).
-func sortStrings(ss []string) {
-	for i := 1; i < len(ss); i++ {
-		for j := i; j > 0 && ss[j] < ss[j-1]; j-- {
-			ss[j], ss[j-1] = ss[j-1], ss[j]
-		}
-	}
 }
 
 func formatBucketValue(v datadogV2.LogsAggregateBucketValue) string {

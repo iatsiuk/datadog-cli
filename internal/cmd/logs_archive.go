@@ -109,10 +109,9 @@ func newLogsArchiveListCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Command
 			var rows [][]string
 			for _, def := range resp.GetData() {
 				attrs := def.Attributes
-				name, query, destType, bucket := "", "", "", ""
+				name, destType, bucket := "", "", ""
 				if attrs != nil {
 					name = attrs.Name
-					query = attrs.Query
 					destType = archiveDestType(attrs)
 					bucket = archiveDestBucket(attrs)
 				}
@@ -123,7 +122,7 @@ func newLogsArchiveListCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Command
 				rows = append(rows, []string{
 					def.GetId(),
 					name,
-					query,
+					destType,
 					dest,
 				})
 			}
@@ -181,20 +180,21 @@ func newLogsArchiveShowCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Command
 
 func newLogsArchiveCreateCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Command {
 	var (
-		name      string
-		query     string
-		destType  string
-		bucket    string
-		path      string
-		accountID string
-		roleName  string
+		name           string
+		query          string
+		destType       string
+		bucket         string
+		path           string
+		accountID      string
+		roleName       string
+		gcsClientEmail string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a log archive",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			dest, err := buildArchiveDestination(destType, bucket, path, accountID, roleName)
+			dest, err := buildArchiveDestination(destType, bucket, path, accountID, roleName, gcsClientEmail)
 			if err != nil {
 				return err
 			}
@@ -224,11 +224,12 @@ func newLogsArchiveCreateCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Comma
 
 	cmd.Flags().StringVar(&name, "name", "", "archive name (required)")
 	cmd.Flags().StringVar(&query, "query", "", "log filter query (required)")
-	cmd.Flags().StringVar(&destType, "dest-type", "s3", "destination type: s3, gcs, azure")
+	cmd.Flags().StringVar(&destType, "dest-type", "s3", "destination type: s3 or gcs")
 	cmd.Flags().StringVar(&bucket, "dest-bucket", "", "destination bucket/container (required)")
 	cmd.Flags().StringVar(&path, "dest-path", "", "archive path prefix")
 	cmd.Flags().StringVar(&accountID, "s3-account-id", "", "AWS account ID (s3 only)")
 	cmd.Flags().StringVar(&roleName, "s3-role-name", "", "IAM role name (s3 only)")
+	cmd.Flags().StringVar(&gcsClientEmail, "gcs-client-email", "", "GCS service account email (gcs only)")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("query")
 	_ = cmd.MarkFlagRequired("dest-bucket")
@@ -237,13 +238,14 @@ func newLogsArchiveCreateCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Comma
 
 func newLogsArchiveUpdateCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Command {
 	var (
-		name      string
-		query     string
-		destType  string
-		bucket    string
-		path      string
-		accountID string
-		roleName  string
+		name           string
+		query          string
+		destType       string
+		bucket         string
+		path           string
+		accountID      string
+		roleName       string
+		gcsClientEmail string
 	)
 
 	cmd := &cobra.Command{
@@ -251,7 +253,7 @@ func newLogsArchiveUpdateCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Comma
 		Short: "Update a log archive",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dest, err := buildArchiveDestination(destType, bucket, path, accountID, roleName)
+			dest, err := buildArchiveDestination(destType, bucket, path, accountID, roleName, gcsClientEmail)
 			if err != nil {
 				return err
 			}
@@ -281,11 +283,12 @@ func newLogsArchiveUpdateCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Comma
 
 	cmd.Flags().StringVar(&name, "name", "", "archive name (required)")
 	cmd.Flags().StringVar(&query, "query", "", "log filter query (required)")
-	cmd.Flags().StringVar(&destType, "dest-type", "s3", "destination type: s3, gcs, azure")
+	cmd.Flags().StringVar(&destType, "dest-type", "s3", "destination type: s3 or gcs")
 	cmd.Flags().StringVar(&bucket, "dest-bucket", "", "destination bucket/container (required)")
 	cmd.Flags().StringVar(&path, "dest-path", "", "archive path prefix")
 	cmd.Flags().StringVar(&accountID, "s3-account-id", "", "AWS account ID (s3 only)")
 	cmd.Flags().StringVar(&roleName, "s3-role-name", "", "IAM role name (s3 only)")
+	cmd.Flags().StringVar(&gcsClientEmail, "gcs-client-email", "", "GCS service account email (gcs only)")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("query")
 	_ = cmd.MarkFlagRequired("dest-bucket")
@@ -327,7 +330,7 @@ func newLogsArchiveDeleteCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Comma
 }
 
 // buildArchiveDestination constructs a LogsArchiveCreateRequestDestination from flags.
-func buildArchiveDestination(destType, bucket, path, accountID, roleName string) (*datadogV2.LogsArchiveCreateRequestDestination, error) {
+func buildArchiveDestination(destType, bucket, path, accountID, roleName, gcsClientEmail string) (*datadogV2.LogsArchiveCreateRequestDestination, error) {
 	switch destType {
 	case "s3":
 		integration := datadogV2.NewLogsArchiveIntegrationS3(accountID, roleName)
@@ -338,7 +341,7 @@ func buildArchiveDestination(destType, bucket, path, accountID, roleName string)
 		d := datadogV2.LogsArchiveDestinationS3AsLogsArchiveCreateRequestDestination(s3dest)
 		return &d, nil
 	case "gcs":
-		integration := datadogV2.NewLogsArchiveIntegrationGCS("")
+		integration := datadogV2.NewLogsArchiveIntegrationGCS(gcsClientEmail)
 		gcsdest := datadogV2.NewLogsArchiveDestinationGCS(bucket, *integration, datadogV2.LOGSARCHIVEDESTINATIONGCSTYPE_GCS)
 		if path != "" {
 			gcsdest.SetPath(path)

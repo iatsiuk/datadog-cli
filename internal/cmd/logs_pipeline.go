@@ -186,11 +186,10 @@ func newLogsPipelineUpdateCmd(mkAPI func() (*logsPipelineAPI, error)) *cobra.Com
 				return err
 			}
 
-			if name == "" {
-				name = args[0]
-			}
 			body := datadogV1.NewLogsPipeline(name)
-			body.SetIsEnabled(enabled)
+			if cmd.Flags().Changed("enabled") {
+				body.SetIsEnabled(enabled)
+			}
 			if filter != "" {
 				f := datadogV1.NewLogsFilter()
 				f.SetQuery(filter)
@@ -209,9 +208,10 @@ func newLogsPipelineUpdateCmd(mkAPI func() (*logsPipelineAPI, error)) *cobra.Com
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "pipeline name")
+	cmd.Flags().StringVar(&name, "name", "", "pipeline name (required)")
 	cmd.Flags().StringVar(&filter, "filter", "", "log filter query")
 	cmd.Flags().BoolVar(&enabled, "enabled", true, "whether pipeline is enabled")
+	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
 
