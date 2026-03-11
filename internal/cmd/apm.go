@@ -29,6 +29,20 @@ func defaultSpansAPI() (*spansAPI, error) {
 	return &spansAPI{api: datadogV2.NewSpansApi(c), ctx: ctx}, nil
 }
 
+type apmAPI struct {
+	api *datadogV2.APMApi
+	ctx context.Context
+}
+
+func defaultAPMAPI() (*apmAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &apmAPI{api: datadogV2.NewAPMApi(c), ctx: ctx}, nil
+}
+
 // NewAPMCommand returns the apm cobra command group.
 func NewAPMCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -38,6 +52,7 @@ func NewAPMCommand() *cobra.Command {
 	cmd.AddCommand(newAPMSearchCmd(defaultSpansAPI))
 	cmd.AddCommand(newAPMTailCmd(defaultSpansAPI))
 	cmd.AddCommand(newAPMAggregateCmd(defaultSpansAPI))
+	cmd.AddCommand(newAPMServicesCmd(defaultAPMAPI))
 	return cmd
 }
 
@@ -370,5 +385,45 @@ func newAPMAggregateCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&toStr, "to", "", "end time, supports date math (default: now)")
 	cmd.Flags().StringSliceVar(&groupBy, "group-by", nil, "facets to group by (repeatable)")
 	cmd.Flags().StringVar(&compute, "compute", "", "aggregation function: count, sum, avg, min, max, etc.")
+	return cmd
+}
+
+func newAPMServicesCmd(mkAPI func() (*apmAPI, error)) *cobra.Command {
+	var env string
+
+	cmd := &cobra.Command{
+		Use:   "services",
+		Short: "List APM services",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if env == "" {
+				return fmt.Errorf("--env is required")
+			}
+
+			aapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := aapi.api.GetServiceList(aapi.ctx, env)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get service list: %w", err)
+			}
+
+			data := resp.GetData()
+			attrs := data.GetAttributes()
+			services := attrs.GetServices()
+			headers := []string{"SERVICE"}
+			rows := make([][]string, len(services))
+			for i, svc := range services {
+				rows[i] = []string{svc}
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&env, "env", "", "environment name (required)")
 	return cmd
 }

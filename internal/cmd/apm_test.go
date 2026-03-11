@@ -518,3 +518,113 @@ func TestAPMAggregateRequiresCompute(t *testing.T) {
 		t.Error("expected error when --compute is missing")
 	}
 }
+
+const mockServicesResponse = `{
+	"data": {
+		"type": "services_list",
+		"attributes": {
+			"services": ["web-store", "checkout", "payment"]
+		}
+	}
+}`
+
+func newTestAPMAPI(srv *httptest.Server) func() (*apmAPI, error) {
+	return func() (*apmAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &apmAPI{api: datadogV2.NewAPMApi(c), ctx: apiCtx}, nil
+	}
+}
+
+func buildAPMServicesCmd(mkAPI func() (*apmAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	apm := &cobra.Command{Use: "apm"}
+	apm.AddCommand(newAPMServicesCmd(mkAPI))
+	root.AddCommand(apm)
+	return root, buf
+}
+
+func TestAPMServicesEnvFlag(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockServicesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMServicesCmd(newTestAPMAPI(srv))
+	root.SetArgs([]string{"apm", "services", "--env", "prod"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if got := req.URL.Query().Get("filter[env]"); got != "prod" {
+		t.Errorf("filter[env] = %q, want %q", got, "prod")
+	}
+}
+
+func TestAPMServicesTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockServicesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMServicesCmd(newTestAPMAPI(srv))
+	root.SetArgs([]string{"apm", "services", "--env", "prod"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"SERVICE", "web-store", "checkout", "payment"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestAPMServicesRequiresEnv(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildAPMServicesCmd(newTestAPMAPI(srv))
+	root.SetArgs([]string{"apm", "services"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --env is missing")
+	}
+}
