@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/spf13/cobra"
 
 	"github.com/iatsiuk/datadog-cli/internal/client"
@@ -28,6 +29,20 @@ func defaultMetricsV1API() (*metricsV1API, error) {
 	return &metricsV1API{api: datadogV1.NewMetricsApi(c), ctx: ctx}, nil
 }
 
+type metricsV2API struct {
+	api *datadogV2.MetricsApi
+	ctx context.Context
+}
+
+func defaultMetricsV2API() (*metricsV2API, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &metricsV2API{api: datadogV2.NewMetricsApi(c), ctx: ctx}, nil
+}
+
 // NewMetricsCommand returns the metrics cobra command group.
 func NewMetricsCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -37,6 +52,7 @@ func NewMetricsCommand() *cobra.Command {
 	cmd.AddCommand(newMetricsQueryCmd(defaultMetricsV1API))
 	cmd.AddCommand(newMetricsSearchCmd(defaultMetricsV1API))
 	cmd.AddCommand(newMetricsListCmd(defaultMetricsV1API))
+	cmd.AddCommand(newMetricsScalarCmd(defaultMetricsV2API))
 	return cmd
 }
 
@@ -210,6 +226,98 @@ func newMetricsListCmd(mkAPI func() (*metricsV1API, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-1h) (required)")
+	return cmd
+}
+
+func newMetricsScalarCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	var (
+		query      string
+		fromStr    string
+		toStr      string
+		aggregator string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "scalar",
+		Short: "Query scalar metrics data using formulas",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if query == "" {
+				return fmt.Errorf("--query is required")
+			}
+
+			fromUnix, err := parseUnixOrRelative(fromStr)
+			if err != nil {
+				return fmt.Errorf("--from: %w", err)
+			}
+			toUnix, err := parseUnixOrRelative(toStr)
+			if err != nil {
+				return fmt.Errorf("--to: %w", err)
+			}
+
+			agg, err := datadogV2.NewMetricsAggregatorFromValue(aggregator)
+			if err != nil {
+				return fmt.Errorf("--aggregator: %w", err)
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			scalarQuery := datadogV2.MetricsScalarQueryAsScalarQuery(
+				datadogV2.NewMetricsScalarQuery(*agg, datadogV2.METRICSDATASOURCE_METRICS, query),
+			)
+			attrs := datadogV2.NewScalarFormulaRequestAttributes(
+				fromUnix*1000, // ms
+				[]datadogV2.ScalarQuery{scalarQuery},
+				toUnix*1000, // ms
+			)
+			req := datadogV2.NewScalarFormulaQueryRequest(
+				*datadogV2.NewScalarFormulaRequest(*attrs, datadogV2.SCALARFORMULAREQUESTTYPE_SCALAR_REQUEST),
+			)
+
+			resp, httpResp, err := mapi.api.QueryScalarData(mapi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("query scalar data: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"NAME", "VALUE"}
+			var rows [][]string
+			if resp.Data != nil && resp.Data.Attributes != nil {
+				for _, col := range resp.Data.Attributes.GetColumns() {
+					dc := col.DataScalarColumn
+					if dc == nil {
+						continue
+					}
+					name := dc.GetName()
+					for _, v := range dc.GetValues() {
+						if v == nil {
+							continue
+						}
+						val := strconv.FormatFloat(*v, 'f', -1, 64)
+						rows = append(rows, []string{name, val})
+					}
+				}
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "metric query (required)")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-1h) (required)")
+	cmd.Flags().StringVar(&toStr, "to", "now", "end time: unix timestamp or relative (e.g. now)")
+	cmd.Flags().StringVar(&aggregator, "aggregator", "avg", "aggregation function (avg, sum, min, max, last)")
 	return cmd
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/spf13/cobra"
 )
 
@@ -354,6 +355,149 @@ func TestMetricsListRelativeTime(t *testing.T) {
 
 	if !strings.Contains(capturedURL, "from=") {
 		t.Errorf("from param not found in URL: %s", capturedURL)
+	}
+}
+
+func newTestMetricsV2API(srv *httptest.Server) func() (*metricsV2API, error) {
+	return func() (*metricsV2API, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		ctx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &metricsV2API{api: datadogV2.NewMetricsApi(c), ctx: ctx}, nil
+	}
+}
+
+func buildMetricsScalarCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsScalarCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+const mockMetricsScalarResponse = `{
+	"data": {
+		"type": "scalar_response",
+		"attributes": {
+			"columns": [
+				{
+					"name": "query1",
+					"type": "number",
+					"values": [42.5]
+				}
+			]
+		}
+	}
+}`
+
+func TestMetricsScalarFlagsRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsScalarResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsScalarCmd(newTestMetricsV2API(srv))
+	// missing --query should fail
+	root.SetArgs([]string{"metrics", "scalar", "--from", "1700000000", "--to", "1700000060"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --query is missing")
+	}
+}
+
+func TestMetricsScalarFlagsParsed(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsScalarResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsScalarCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "scalar",
+		"--query", "system.cpu.user{*}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedBody, "system.cpu.user") {
+		t.Errorf("query not found in request body: %s", capturedBody)
+	}
+}
+
+func TestMetricsScalarTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsScalarResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsScalarCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "scalar",
+		"--query", "system.cpu.user{*}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"NAME", "VALUE", "query1", "42.5"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsScalarJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsScalarResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsScalarCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "scalar",
+		"--query", "system.cpu.user{*}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+		"--json",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
 	}
 }
 
