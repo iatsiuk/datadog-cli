@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/spf13/cobra"
@@ -131,6 +132,12 @@ func newLogsCustomDestCreateCmd(mkAPI func() (*logsCustomDestAPI, error)) *cobra
 		Use:   "create",
 		Short: "Create a custom destination",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if password == "" {
+				password = os.Getenv("DD_LOGS_DEST_PASSWORD")
+			}
+			if password == "" {
+				return fmt.Errorf("password must be provided via --password or DD_LOGS_DEST_PASSWORD env var")
+			}
 			auth := datadogV2.CustomDestinationHttpDestinationAuthBasicAsCustomDestinationHttpDestinationAuth(
 				datadogV2.NewCustomDestinationHttpDestinationAuthBasic(
 					password,
@@ -182,7 +189,6 @@ func newLogsCustomDestCreateCmd(mkAPI func() (*logsCustomDestAPI, error)) *cobra
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("url")
 	_ = cmd.MarkFlagRequired("username")
-	_ = cmd.MarkFlagRequired("password")
 	return cmd
 }
 

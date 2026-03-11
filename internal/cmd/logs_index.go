@@ -186,25 +186,26 @@ func newLogsIndexUpdateCmd(mkAPI func() (*logsIndexAPI, error)) *cobra.Command {
 				return err
 			}
 
-			var f datadogV1.LogsFilter
+			// fetch existing index to preserve fields not explicitly updated (API requires filter in PUT body)
+			existing, httpResp, err := iapi.api.GetLogsIndex(iapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get log index: %w", err)
+			}
+
+			f := existing.GetFilter()
 			if cmd.Flags().Changed("filter") {
 				lf := datadogV1.NewLogsFilter()
 				lf.SetQuery(filter)
 				f = *lf
-			} else {
-				// fetch existing index to preserve its filter (API requires filter in PUT body)
-				existing, httpResp, err := iapi.api.GetLogsIndex(iapi.ctx, args[0])
-				if httpResp != nil {
-					_ = httpResp.Body.Close()
-				}
-				if err != nil {
-					return fmt.Errorf("get log index: %w", err)
-				}
-				f = existing.GetFilter()
 			}
 			body := datadogV1.NewLogsIndexUpdateRequest(f)
-			if retention > 0 {
+			if cmd.Flags().Changed("retention") {
 				body.SetNumRetentionDays(retention)
+			} else if existing.NumRetentionDays != nil {
+				body.SetNumRetentionDays(*existing.NumRetentionDays)
 			}
 
 			resp, httpResp, err := iapi.api.UpdateLogsIndex(iapi.ctx, args[0], *body)

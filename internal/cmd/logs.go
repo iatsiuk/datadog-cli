@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -173,53 +174,77 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 			ticker := time.NewTicker(interval)
 			defer ticker.Stop()
 
+			// overlap to account for Datadog ingestion latency
+			const ingestionOverlap = 30 * time.Second
+
 			for {
 				to := time.Now()
-				opts := datadogV2.NewListLogsGetOptionalParameters().
+				baseOpts := datadogV2.NewListLogsGetOptionalParameters().
 					WithFilterFrom(from).
 					WithFilterTo(to).
-					WithPageLimit(100)
+					WithSort(datadogV2.LOGSSORT_TIMESTAMP_ASCENDING).
+					WithPageLimit(1000)
 				if q != "" {
-					opts = opts.WithFilterQuery(q)
+					baseOpts = baseOpts.WithFilterQuery(q)
 				}
 
-				resp, httpResp, apiErr := lapi.api.ListLogsGet(lapi.ctx, *opts)
-				if httpResp != nil {
-					_ = httpResp.Body.Close()
-				}
+				nextSeen := map[string]struct{}{}
+				opts := *baseOpts
+				apiErr := func() error {
+					for {
+						resp, httpResp, err := lapi.api.ListLogsGet(lapi.ctx, opts)
+						if httpResp != nil {
+							_ = httpResp.Body.Close()
+						}
+						if err != nil {
+							return err
+						}
+						for _, log := range resp.GetData() {
+							id := log.GetId()
+							if id == "" {
+								continue
+							}
+							nextSeen[id] = struct{}{}
+							_, inPrev := prevSeen[id]
+							_, inCurr := currSeen[id]
+							if inPrev || inCurr {
+								continue
+							}
+							attrs := log.GetAttributes()
+							ts := ""
+							if t := attrs.Timestamp; t != nil {
+								ts = t.UTC().Format(time.RFC3339)
+							}
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s  %s\n",
+								ts,
+								attrs.GetService(),
+								attrs.GetStatus(),
+								attrs.GetMessage(),
+							)
+						}
+						cursor := ""
+						if resp.Meta != nil && resp.Meta.Page != nil {
+							cursor = resp.Meta.Page.GetAfter()
+						}
+						if cursor == "" {
+							break
+						}
+						opts = *baseOpts
+						opts.PageCursor = &cursor
+					}
+					return nil
+				}()
+
 				if apiErr != nil {
 					if lapi.ctx.Err() != nil {
 						return nil
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
 				} else {
-					nextSeen := map[string]struct{}{}
-					for _, log := range resp.GetData() {
-						id := log.GetId()
-						if id == "" {
-							continue
-						}
-						nextSeen[id] = struct{}{}
-						_, inPrev := prevSeen[id]
-						_, inCurr := currSeen[id]
-						if inPrev || inCurr {
-							continue
-						}
-						attrs := log.GetAttributes()
-						ts := ""
-						if t := attrs.Timestamp; t != nil {
-							ts = t.UTC().Format(time.RFC3339)
-						}
-						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s  %s\n",
-							ts,
-							attrs.GetService(),
-							attrs.GetStatus(),
-							attrs.GetMessage(),
-						)
-					}
 					prevSeen = currSeen
 					currSeen = nextSeen
-					from = to
+					// subtract overlap to catch late-arriving logs on next poll
+					from = to.Add(-ingestionOverlap)
 				}
 
 				select {
@@ -421,8 +446,8 @@ func parseRelativeTime(s string) (time.Time, error) {
 		raw := s[4:]
 		// expand "d" day suffix to equivalent hours before parsing
 		if strings.HasSuffix(raw, "d") {
-			var days int64
-			if _, err := fmt.Sscanf(raw[:len(raw)-1], "%d", &days); err != nil || days <= 0 {
+			days, err := strconv.ParseInt(raw[:len(raw)-1], 10, 64)
+			if err != nil || days <= 0 {
 				return time.Time{}, fmt.Errorf("invalid relative time %q", s)
 			}
 			return time.Now().Add(-time.Duration(days) * 24 * time.Hour), nil

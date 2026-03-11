@@ -332,6 +332,12 @@ func newLogsArchiveDeleteCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Comma
 func buildArchiveDestination(destType, bucket, path, accountID, roleName, gcsClientEmail string) (*datadogV2.LogsArchiveCreateRequestDestination, error) {
 	switch destType {
 	case "s3":
+		if accountID == "" {
+			return nil, fmt.Errorf("--s3-account-id is required for s3 destination")
+		}
+		if roleName == "" {
+			return nil, fmt.Errorf("--s3-role-name is required for s3 destination")
+		}
 		integration := datadogV2.NewLogsArchiveIntegrationS3(accountID, roleName)
 		s3dest := datadogV2.NewLogsArchiveDestinationS3(bucket, *integration, datadogV2.LOGSARCHIVEDESTINATIONS3TYPE_S3)
 		if path != "" {
@@ -340,6 +346,9 @@ func buildArchiveDestination(destType, bucket, path, accountID, roleName, gcsCli
 		d := datadogV2.LogsArchiveDestinationS3AsLogsArchiveCreateRequestDestination(s3dest)
 		return &d, nil
 	case "gcs":
+		if gcsClientEmail == "" {
+			return nil, fmt.Errorf("--gcs-client-email is required for gcs destination")
+		}
 		integration := datadogV2.NewLogsArchiveIntegrationGCS(gcsClientEmail)
 		gcsdest := datadogV2.NewLogsArchiveDestinationGCS(bucket, *integration, datadogV2.LOGSARCHIVEDESTINATIONGCSTYPE_GCS)
 		if path != "" {

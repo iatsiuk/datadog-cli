@@ -186,14 +186,30 @@ func newLogsPipelineUpdateCmd(mkAPI func() (*logsPipelineAPI, error)) *cobra.Com
 				return err
 			}
 
+			// fetch existing pipeline to preserve processors (PUT replaces entire object)
+			existing, httpResp, err := papi.api.GetLogsPipeline(papi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get log pipeline: %w", err)
+			}
+
 			body := datadogV1.NewLogsPipeline(name)
+			if existing.HasProcessors() {
+				body.SetProcessors(existing.GetProcessors())
+			}
 			if cmd.Flags().Changed("enabled") {
 				body.SetIsEnabled(enabled)
+			} else {
+				body.SetIsEnabled(existing.GetIsEnabled())
 			}
 			if filter != "" {
 				f := datadogV1.NewLogsFilter()
 				f.SetQuery(filter)
 				body.SetFilter(*f)
+			} else if existing.Filter != nil {
+				body.SetFilter(*existing.Filter)
 			}
 
 			resp, httpResp, err := papi.api.UpdateLogsPipeline(papi.ctx, args[0], *body)
