@@ -56,6 +56,7 @@ func NewMetricsCommand() *cobra.Command {
 	cmd.AddCommand(newMetricsScalarCmd(defaultMetricsV2API))
 	cmd.AddCommand(newMetricsTimeseriesCmd(defaultMetricsV2API))
 	cmd.AddCommand(newMetricsSubmitCmd(defaultMetricsV2API))
+	cmd.AddCommand(newMetricsMetadataCmd(defaultMetricsV1API))
 	return cmd
 }
 
@@ -479,6 +480,113 @@ func newMetricsSubmitCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
 	cmd.Flags().StringVar(&metricType, "type", "gauge", "metric type: gauge, count, rate")
 	cmd.Flags().StringArrayVar(&points, "points", nil, "data points in timestamp:value format (repeatable)")
 	cmd.Flags().StringArrayVar(&tags, "tags", nil, "tags in key:value format (repeatable)")
+	return cmd
+}
+
+func newMetricsMetadataCmd(mkAPI func() (*metricsV1API, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "metadata",
+		Short: "Manage metric metadata",
+	}
+	cmd.AddCommand(newMetricsMetadataShowCmd(mkAPI))
+	cmd.AddCommand(newMetricsMetadataUpdateCmd(mkAPI))
+	return cmd
+}
+
+func newMetricsMetadataShowCmd(mkAPI func() (*metricsV1API, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <metric>",
+		Short: "Show metadata for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := mapi.api.GetMetricMetadata(mapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get metric metadata: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"FIELD", "VALUE"}
+			rows := [][]string{
+				{"type", resp.GetType()},
+				{"description", resp.GetDescription()},
+				{"unit", resp.GetUnit()},
+				{"per_unit", resp.GetPerUnit()},
+				{"short_name", resp.GetShortName()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newMetricsMetadataUpdateCmd(mkAPI func() (*metricsV1API, error)) *cobra.Command {
+	var (
+		metricType  string
+		description string
+		unit        string
+		perUnit     string
+		shortName   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <metric>",
+		Short: "Update metadata for a metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			body := datadogV1.MetricMetadata{}
+			if cmd.Flags().Changed("type") {
+				body.Type = &metricType
+			}
+			if cmd.Flags().Changed("description") {
+				body.Description = &description
+			}
+			if cmd.Flags().Changed("unit") {
+				body.Unit = &unit
+			}
+			if cmd.Flags().Changed("per-unit") {
+				body.PerUnit = &perUnit
+			}
+			if cmd.Flags().Changed("short-name") {
+				body.ShortName = &shortName
+			}
+
+			_, httpResp, err := mapi.api.UpdateMetricMetadata(mapi.ctx, args[0], body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update metric metadata: %w", err)
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "updated")
+			return err
+		},
+	}
+
+	cmd.Flags().StringVar(&metricType, "type", "", "metric type (e.g. gauge, count, rate)")
+	cmd.Flags().StringVar(&description, "description", "", "metric description")
+	cmd.Flags().StringVar(&unit, "unit", "", "metric unit")
+	cmd.Flags().StringVar(&perUnit, "per-unit", "", "per unit denominator")
+	cmd.Flags().StringVar(&shortName, "short-name", "", "metric short name")
 	return cmd
 }
 

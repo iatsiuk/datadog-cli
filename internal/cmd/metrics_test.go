@@ -840,6 +840,141 @@ func TestMetricsSubmitMultiplePoints(t *testing.T) {
 	}
 }
 
+func buildMetricsMetadataCmd(mkAPI func() (*metricsV1API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsMetadataCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+const mockMetricsMetadataResponse = `{
+	"type": "gauge",
+	"description": "Average CPU usage",
+	"unit": "percent",
+	"per_unit": "second",
+	"short_name": "cpu"
+}`
+
+func TestMetricsMetadataShowTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsMetadataResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsMetadataCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "metadata", "show", "system.cpu.user"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"FIELD", "VALUE", "gauge", "percent", "Average CPU usage"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsMetadataShowJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsMetadataResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsMetadataCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "metadata", "show", "system.cpu.user", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+}
+
+func TestMetricsMetadataShowRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsMetadataResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsMetadataCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "metadata", "show"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}
+
+func TestMetricsMetadataUpdateFlagsParsed(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsMetadataResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsMetadataCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "metadata", "update", "system.cpu.user",
+		"--type", "gauge",
+		"--description", "CPU usage",
+		"--unit", "percent",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedBody, "gauge") {
+		t.Errorf("type not found in request body: %s", capturedBody)
+	}
+	if !strings.Contains(capturedBody, "CPU usage") {
+		t.Errorf("description not found in request body: %s", capturedBody)
+	}
+	if !strings.Contains(capturedBody, "percent") {
+		t.Errorf("unit not found in request body: %s", capturedBody)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "updated") {
+		t.Errorf("output missing 'updated':\n%s", out)
+	}
+}
+
+func TestMetricsMetadataUpdateRequiresArg(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsMetadataResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsMetadataCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "metadata", "update"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when metric name is missing")
+	}
+}
+
 func TestMetricsQueryRelativeTime(t *testing.T) {
 	t.Parallel()
 
