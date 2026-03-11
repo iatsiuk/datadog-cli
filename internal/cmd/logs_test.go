@@ -70,9 +70,14 @@ func buildSearchCmd(mkAPI func() (*logsAPI, error)) (*cobra.Command, *bytes.Buff
 func TestLogsSearchFlagQuery(t *testing.T) {
 	t.Parallel()
 
-	var capturedReq *http.Request
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		capturedReq = r
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
 	}))
@@ -83,10 +88,13 @@ func TestLogsSearchFlagQuery(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if capturedReq == nil {
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
 		t.Fatal("no request made to mock server")
 	}
-	q := capturedReq.URL.Query()
+	q := req.URL.Query()
 	if got := q.Get("filter[query]"); got != "service:web" {
 		t.Errorf("filter[query] = %q, want %q", got, "service:web")
 	}
@@ -98,9 +106,14 @@ func TestLogsSearchFlagQuery(t *testing.T) {
 func TestLogsSearchFlagFromTo(t *testing.T) {
 	t.Parallel()
 
-	var capturedReq *http.Request
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		capturedReq = r
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
 	}))
@@ -111,10 +124,13 @@ func TestLogsSearchFlagFromTo(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if capturedReq == nil {
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
 		t.Fatal("no request made")
 	}
-	q := capturedReq.URL.Query()
+	q := req.URL.Query()
 	if q.Get("filter[from]") == "" {
 		t.Error("filter[from] should be set")
 	}
@@ -174,9 +190,14 @@ func TestLogsSearchJSONOutput(t *testing.T) {
 func TestLogsSearchDefaultFrom(t *testing.T) {
 	t.Parallel()
 
-	var capturedReq *http.Request
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		capturedReq = r
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
 	}))
@@ -188,10 +209,13 @@ func TestLogsSearchDefaultFrom(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if capturedReq == nil {
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
 		t.Fatal("no request made")
 	}
-	if q := capturedReq.URL.Query().Get("filter[from]"); q == "" {
+	if q := req.URL.Query().Get("filter[from]"); q == "" {
 		t.Error("filter[from] should be set when --from is omitted")
 	}
 }
