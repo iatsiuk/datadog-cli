@@ -1260,6 +1260,22 @@ func TestMetricsTagConfigCreateRequiresArg(t *testing.T) {
 	}
 }
 
+func TestMetricsTagConfigCreateRequiresTags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagConfigCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTagConfigCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "tag-config", "create", "custom.metric"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --tags is missing")
+	}
+}
+
 func TestMetricsTagConfigUpdateFlagsParsed(t *testing.T) {
 	t.Parallel()
 

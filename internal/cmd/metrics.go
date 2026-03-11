@@ -964,6 +964,10 @@ func newMetricsTagConfigCreateCmd(mkAPI func() (*metricsV2API, error)) *cobra.Co
 		Short: "Create a tag configuration for a metric",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(tags) == 0 {
+				return fmt.Errorf("--tags is required")
+			}
+
 			mt, err := datadogV2.NewMetricTagConfigurationMetricTypesFromValue(metricType)
 			if err != nil {
 				return fmt.Errorf("--metric-type: %w", err)
