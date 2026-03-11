@@ -260,14 +260,15 @@ func newAPMTailCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 						}
 						for _, span := range resp.GetData() {
 							id := span.GetId()
-							if id != "" {
-								nextSeen[id] = struct{}{}
-								if _, inPrev := prevSeen[id]; inPrev {
-									continue
-								}
-								if _, inCurr := currSeen[id]; inCurr {
-									continue
-								}
+							if id == "" {
+								continue
+							}
+							nextSeen[id] = struct{}{}
+							if _, inPrev := prevSeen[id]; inPrev {
+								continue
+							}
+							if _, inCurr := currSeen[id]; inCurr {
+								continue
 							}
 							if asJSON {
 								_ = output.PrintJSON(cmd.OutOrStdout(), span)
