@@ -145,13 +145,13 @@ Search spans, list services, manage APM retention filters and span-based metrics
 
 ```
 dd apm search [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--sort <field>]
-dd apm tail [--query <query>] [--service <name>] [--interval <duration>]
+dd apm tail [--query <query>] [--service <name>]
 dd apm aggregate --compute <fn>[:<metric>] [--query <query>] [--from <time>] [--to <time>] [--group-by <facets>]
 dd apm services --env <env>
 dd apm retention-filter list
 dd apm retention-filter show <id>
 dd apm retention-filter create --name <name> --filter <query> --rate <0.0-1.0>
-dd apm retention-filter update <id> [--name <name>] [--filter <query>] [--rate <0.0-1.0>]
+dd apm retention-filter update <id> --name <name> --filter <query> [--rate <0.0-1.0>]
 dd apm retention-filter delete <id> --yes
 dd apm span-metric list
 dd apm span-metric show <id>

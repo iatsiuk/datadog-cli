@@ -351,11 +351,15 @@ func TestAPMTailPollsAPIAndPrintsNewSpans(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
+	var mu sync.Mutex
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		mu.Lock()
 		callCount++
-		if callCount == 1 {
+		n := callCount
+		mu.Unlock()
+		if n == 1 {
 			fmt.Fprint(w, mockSpansResponse) //nolint:errcheck
 		} else {
 			cancel()
@@ -904,7 +908,7 @@ func TestAPMRetentionFilterDeleteWithYes(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	root, _ := buildAPMRetentionFilterCmd(newTestRetentionFiltersAPI(srv))
+	root, buf := buildAPMRetentionFilterCmd(newTestRetentionFiltersAPI(srv))
 	root.SetArgs([]string{"apm", "retention-filter", "delete", "rf-1", "--yes"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -912,6 +916,9 @@ func TestAPMRetentionFilterDeleteWithYes(t *testing.T) {
 
 	if !strings.Contains(capturedPath, "rf-1") {
 		t.Errorf("path %q does not contain rf-1", capturedPath)
+	}
+	if out := buf.String(); !strings.Contains(out, "deleted") {
+		t.Errorf("output missing 'deleted': %s", out)
 	}
 }
 

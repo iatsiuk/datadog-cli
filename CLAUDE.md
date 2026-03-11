@@ -21,6 +21,13 @@ CLI tool for querying Datadog from the terminal.
 - `datadogV1.MetricsApi`: QueryMetrics, ListMetrics, ListActiveMetrics, GetMetricMetadata, UpdateMetricMetadata
 - `datadogV2.MetricsApi`: QueryScalarData, QueryTimeseriesData, SubmitMetrics, ListTagConfigurations, GetTagConfiguration, CreateTagConfiguration, UpdateTagConfiguration, DeleteTagConfiguration, ListTagsByMetricName, ListVolumesByMetricName, ListMetricAssets, EstimateMetricsOutputSeries
 
+### APM
+
+- `datadogV2.SpansApi`: ListSpansGet, AggregateSpans
+- `datadogV2.APMApi`: GetServiceList
+- `datadogV2.APMRetentionFiltersApi`: ListApmRetentionFilters, GetApmRetentionFilter, CreateApmRetentionFilter, UpdateApmRetentionFilter, DeleteApmRetentionFilter
+- `datadogV2.SpansMetricsApi`: ListSpansMetrics, GetSpansMetric, CreateSpansMetric, UpdateSpansMetric, DeleteSpansMetric
+
 ## Code Style
 
 ### Imports

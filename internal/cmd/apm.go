@@ -305,7 +305,7 @@ func newAPMAggregateCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 			if compute == "" {
 				return fmt.Errorf("--compute is required")
 			}
-			aggFn, err := datadogV2.NewSpansAggregationFunctionFromValue(compute)
+			aggFn, metric, err := parseSpanComputeSpec(compute)
 			if err != nil {
 				return fmt.Errorf("--compute: %w", err)
 			}
@@ -326,9 +326,11 @@ func newAPMAggregateCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 				filter.SetQuery(query)
 			}
 
-			computes := []datadogV2.SpansCompute{
-				*datadogV2.NewSpansCompute(*aggFn),
+			c := datadogV2.NewSpansCompute(aggFn)
+			if metric != "" {
+				c.SetMetric(metric)
 			}
+			computes := []datadogV2.SpansCompute{*c}
 
 			var groups []datadogV2.SpansGroupBy
 			for _, facet := range groupBy {
@@ -963,4 +965,18 @@ func newSpanMetricDeleteCmd(mkAPI func() (*spansMetricsAPI, error)) *cobra.Comma
 
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
+}
+
+// parseSpanComputeSpec parses "count" or "sum:@metric" into aggregation function and metric.
+func parseSpanComputeSpec(s string) (datadogV2.SpansAggregationFunction, string, error) {
+	parts := strings.SplitN(s, ":", 2)
+	agg, err := datadogV2.NewSpansAggregationFunctionFromValue(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("unknown aggregation %q", parts[0])
+	}
+	metric := ""
+	if len(parts) == 2 {
+		metric = parts[1]
+	}
+	return *agg, metric, nil
 }
