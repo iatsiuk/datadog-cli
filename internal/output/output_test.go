@@ -32,6 +32,14 @@ func TestPrintTable(t *testing.T) {
 			},
 			contains: []string{"NAME", "VALUE", "foo", "bar", "longer-name", "longer-value"},
 		},
+		{
+			name:    "sanitizes tab and newline in cell",
+			headers: []string{"NAME", "VALUE"},
+			rows: [][]string{
+				{"col\twith\ttabs", "col\nwith\nnewlines"},
+			},
+			contains: []string{"col with tabs", "col with newlines"},
+		},
 	}
 
 	for _, tc := range tests {

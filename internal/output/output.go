@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 )
 
@@ -22,6 +23,9 @@ func writeRow(w io.Writer, cols []string) {
 		if i > 0 {
 			fmt.Fprint(w, "\t") //nolint:errcheck
 		}
+		// sanitize tab and newline to avoid corrupting tabwriter layout
+		col = strings.ReplaceAll(col, "\t", " ")
+		col = strings.ReplaceAll(col, "\n", " ")
 		fmt.Fprint(w, col) //nolint:errcheck
 	}
 	fmt.Fprintln(w) //nolint:errcheck
