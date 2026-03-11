@@ -53,6 +53,7 @@ func NewMetricsCommand() *cobra.Command {
 	cmd.AddCommand(newMetricsSearchCmd(defaultMetricsV1API))
 	cmd.AddCommand(newMetricsListCmd(defaultMetricsV1API))
 	cmd.AddCommand(newMetricsScalarCmd(defaultMetricsV2API))
+	cmd.AddCommand(newMetricsTimeseriesCmd(defaultMetricsV2API))
 	return cmd
 }
 
@@ -318,6 +319,96 @@ func newMetricsScalarCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
 	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-1h) (required)")
 	cmd.Flags().StringVar(&toStr, "to", "now", "end time: unix timestamp or relative (e.g. now)")
 	cmd.Flags().StringVar(&aggregator, "aggregator", "avg", "aggregation function (avg, sum, min, max, last)")
+	return cmd
+}
+
+func newMetricsTimeseriesCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	var (
+		query   string
+		fromStr string
+		toStr   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "timeseries",
+		Short: "Query timeseries metrics data using formulas (V2)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if query == "" {
+				return fmt.Errorf("--query is required")
+			}
+
+			fromUnix, err := parseUnixOrRelative(fromStr)
+			if err != nil {
+				return fmt.Errorf("--from: %w", err)
+			}
+			toUnix, err := parseUnixOrRelative(toStr)
+			if err != nil {
+				return fmt.Errorf("--to: %w", err)
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			tsQuery := datadogV2.TimeseriesQuery{
+				MetricsTimeseriesQuery: datadogV2.NewMetricsTimeseriesQuery(
+					datadogV2.METRICSDATASOURCE_METRICS,
+					query,
+				),
+			}
+			attrs := datadogV2.NewTimeseriesFormulaRequestAttributes(
+				fromUnix*1000, // ms
+				[]datadogV2.TimeseriesQuery{tsQuery},
+				toUnix*1000, // ms
+			)
+			req := datadogV2.TimeseriesFormulaQueryRequest{
+				Data: datadogV2.TimeseriesFormulaRequest{
+					Attributes: *attrs,
+					Type:       datadogV2.TIMESERIESFORMULAREQUESTTYPE_TIMESERIES_REQUEST,
+				},
+			}
+
+			resp, httpResp, err := mapi.api.QueryTimeseriesData(mapi.ctx, req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("query timeseries data: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"TIMESTAMP", "VALUE"}
+			var rows [][]string
+			if resp.Data != nil && resp.Data.Attributes != nil {
+				times := resp.Data.Attributes.GetTimes()
+				values := resp.Data.Attributes.GetValues()
+				for seriesIdx, seriesVals := range values {
+					_ = seriesIdx
+					for i, v := range seriesVals {
+						if v == nil || i >= len(times) {
+							continue
+						}
+						ts := time.Unix(times[i]/1000, 0).UTC().Format(time.RFC3339)
+						val := strconv.FormatFloat(*v, 'f', -1, 64)
+						rows = append(rows, []string{ts, val})
+					}
+				}
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "metric query (required)")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-1h) (required)")
+	cmd.Flags().StringVar(&toStr, "to", "now", "end time: unix timestamp or relative (e.g. now)")
 	return cmd
 }
 

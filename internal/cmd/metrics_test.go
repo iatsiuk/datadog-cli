@@ -501,6 +501,126 @@ func TestMetricsScalarJSONOutput(t *testing.T) {
 	}
 }
 
+func buildMetricsTimeseriesCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsTimeseriesCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+const mockMetricsTimeseriesResponse = `{
+	"data": {
+		"type": "timeseries_response",
+		"attributes": {
+			"series": [{"query_index": 0, "unit": null}],
+			"times": [1700000000000, 1700000060000],
+			"values": [[42.5, 43.2]]
+		}
+	}
+}`
+
+func TestMetricsTimeseriesFlagsRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsTimeseriesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTimeseriesCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "timeseries", "--from", "1700000000", "--to", "1700000060"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --query is missing")
+	}
+}
+
+func TestMetricsTimeseriesFlagsParsed(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsTimeseriesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsTimeseriesCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "timeseries",
+		"--query", "avg:system.cpu.user{*}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedBody, "system.cpu.user") {
+		t.Errorf("query not found in request body: %s", capturedBody)
+	}
+}
+
+func TestMetricsTimeseriesTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsTimeseriesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTimeseriesCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "timeseries",
+		"--query", "avg:system.cpu.user{*}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"TIMESTAMP", "VALUE", "42.5", "43.2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsTimeseriesJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsTimeseriesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsTimeseriesCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "timeseries",
+		"--query", "avg:system.cpu.user{*}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+		"--json",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+}
+
 func TestMetricsQueryRelativeTime(t *testing.T) {
 	t.Parallel()
 
