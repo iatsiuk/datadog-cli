@@ -1,0 +1,20 @@
+# Binary
+/datadog-cli
+
+# Test coverage
+coverage.out
+
+# Vendor directory
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# ralphex
+.ralphex/
