@@ -226,54 +226,99 @@ func newAPMTailCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 				effectiveQuery = q
 			}
 
-			// start from now
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			// overlap window to catch late-arriving spans due to ingestion delay
+			const ingestionOverlap = 10 * time.Second
 			since := time.Now()
+			var prevSeen map[string]struct{}
+			currSeen := map[string]struct{}{}
 
 			for {
-				now := time.Now()
-				opts := datadogV2.NewListSpansGetOptionalParameters().
+				to := time.Now()
+				baseOpts := datadogV2.NewListSpansGetOptionalParameters().
 					WithFilterFrom(since.UTC().Format(time.RFC3339)).
-					WithFilterTo(now.UTC().Format(time.RFC3339)).
+					WithFilterTo(to.UTC().Format(time.RFC3339)).
 					WithPageLimit(100)
 				if effectiveQuery != "" {
-					opts = opts.WithFilterQuery(effectiveQuery)
+					baseOpts = baseOpts.WithFilterQuery(effectiveQuery)
 				}
 
-				resp, httpResp, err := sapi.api.ListSpansGet(sapi.ctx, *opts)
-				if httpResp != nil {
-					_ = httpResp.Body.Close()
-				}
-				if err != nil {
-					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				nextSeen := map[string]struct{}{}
+				opts := *baseOpts
+				apiErr := func() error {
+					for {
+						resp, httpResp, innerErr := sapi.api.ListSpansGet(sapi.ctx, opts)
+						if httpResp != nil {
+							_ = httpResp.Body.Close()
+						}
+						if innerErr != nil {
+							return innerErr
+						}
+						for _, span := range resp.GetData() {
+							id := span.GetId()
+							if id != "" {
+								nextSeen[id] = struct{}{}
+								if _, inPrev := prevSeen[id]; inPrev {
+									continue
+								}
+								if _, inCurr := currSeen[id]; inCurr {
+									continue
+								}
+							}
+							if asJSON {
+								_ = output.PrintJSON(cmd.OutOrStdout(), span)
+							} else {
+								attrs := span.GetAttributes()
+								ts := ""
+								if t := attrs.StartTimestamp; t != nil {
+									ts = t.UTC().Format(time.RFC3339)
+								}
+								duration := ""
+								if attrs.StartTimestamp != nil && attrs.EndTimestamp != nil {
+									d := attrs.EndTimestamp.Sub(*attrs.StartTimestamp)
+									duration = d.String()
+								}
+								status := "ok"
+								if errVal, ok := attrs.GetAttributes()["error"]; ok {
+									if errStr, ok2 := errVal.(string); ok2 && errStr == "1" {
+										status = "error"
+									} else if errNum, ok3 := errVal.(float64); ok3 && errNum != 0 {
+										status = "error"
+									}
+								}
+								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n",
+									ts, attrs.GetService(), attrs.GetResourceName(), duration, status)
+							}
+						}
+						cursor := ""
+						if resp.Meta != nil && resp.Meta.Page != nil {
+							cursor = resp.Meta.Page.GetAfter()
+						}
+						if cursor == "" {
+							break
+						}
+						opts = *baseOpts
+						opts.PageCursor = &cursor
+					}
+					return nil
+				}()
+
+				if apiErr != nil {
+					if errors.Is(apiErr, context.Canceled) || errors.Is(apiErr, context.DeadlineExceeded) {
 						return nil
 					}
-					return fmt.Errorf("tail spans: %w", err)
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
+					prevSeen = currSeen
+					currSeen = nextSeen
+				} else {
+					prevSeen = currSeen
+					currSeen = nextSeen
+					since = to.Add(-ingestionOverlap)
 				}
-
-				for _, span := range resp.GetData() {
-					attrs := span.GetAttributes()
-					ts := ""
-					if t := attrs.StartTimestamp; t != nil {
-						ts = t.UTC().Format(time.RFC3339)
-					}
-					duration := ""
-					if attrs.StartTimestamp != nil && attrs.EndTimestamp != nil {
-						d := attrs.EndTimestamp.Sub(*attrs.StartTimestamp)
-						duration = d.String()
-					}
-					status := "ok"
-					if errVal, ok := attrs.GetAttributes()["error"]; ok {
-						if errStr, ok2 := errVal.(string); ok2 && errStr == "1" {
-							status = "error"
-						} else if errNum, ok3 := errVal.(float64); ok3 && errNum != 0 {
-							status = "error"
-						}
-					}
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n",
-						ts, attrs.GetService(), attrs.GetResourceName(), duration, status)
-				}
-
-				since = now
 
 				select {
 				case <-sapi.ctx.Done():
@@ -410,6 +455,18 @@ func newAPMAggregateCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 					row = append(row, v)
 				}
 				rows = append(rows, row)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				bucketData := resp.GetData()
+				if bucketData == nil {
+					bucketData = []datadogV2.SpansAggregateBucket{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), bucketData)
 			}
 
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
@@ -651,6 +708,12 @@ func newRetentionFilterUpdateCmd(mkAPI func() (*retentionFiltersAPI, error)) *co
 			}
 			if filterExpr == "" {
 				return fmt.Errorf("--filter is required")
+			}
+			if !cmd.Flags().Changed("rate") {
+				return fmt.Errorf("--rate is required")
+			}
+			if !cmd.Flags().Changed("enabled") {
+				return fmt.Errorf("--enabled is required")
 			}
 
 			rapi, err := mkAPI()
@@ -908,7 +971,7 @@ func newSpanMetricUpdateCmd(mkAPI func() (*spansMetricsAPI, error)) *cobra.Comma
 			}
 
 			attrs := datadogV2.NewSpansMetricUpdateAttributes()
-			if filterQ != "" {
+			if cmd.Flags().Changed("filter") {
 				f := datadogV2.NewSpansMetricFilter()
 				f.SetQuery(filterQ)
 				attrs.SetFilter(*f)

@@ -151,11 +151,11 @@ dd apm services --env <env>
 dd apm retention-filter list
 dd apm retention-filter show <id>
 dd apm retention-filter create --name <name> --filter <query> --rate <0.0-1.0>
-dd apm retention-filter update <id> --name <name> --filter <query> [--rate <0.0-1.0>]
+dd apm retention-filter update <id> --name <name> --filter <query> --rate <0.0-1.0> --enabled <true|false>
 dd apm retention-filter delete <id> --yes
 dd apm span-metric list
 dd apm span-metric show <id>
-dd apm span-metric create --id <id> --compute <count|distribution>[:<path>] --filter <query> [--group-by <facets>]
+dd apm span-metric create --id <id> --compute <count|distribution> [--path <attr>] --filter <query> [--group-by <facets>]
 dd apm span-metric update <id> [--filter <query>] [--group-by <facets>]
 dd apm span-metric delete <id> --yes
 ```

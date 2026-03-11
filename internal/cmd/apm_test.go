@@ -855,6 +855,7 @@ func TestAPMRetentionFilterUpdateFlags(t *testing.T) {
 		"--name", "updated filter",
 		"--filter", "status:error",
 		"--rate", "1.0",
+		"--enabled=true",
 	})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
