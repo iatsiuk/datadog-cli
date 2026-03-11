@@ -105,7 +105,7 @@ func newLogsArchiveListCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Command
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			headers := []string{"ID", "NAME", "TYPE", "DESTINATION"}
+			headers := []string{"ID", "NAME", "DESTINATION"}
 			var rows [][]string
 			for _, def := range resp.GetData() {
 				attrs := def.Attributes
@@ -122,7 +122,6 @@ func newLogsArchiveListCmd(mkAPI func() (*logsArchiveAPI, error)) *cobra.Command
 				rows = append(rows, []string{
 					def.GetId(),
 					name,
-					destType,
 					dest,
 				})
 			}

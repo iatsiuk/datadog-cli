@@ -98,7 +98,7 @@ dd logs metric delete <id> --yes
 dd logs custom-destination list
 dd logs custom-destination show <id>
 dd logs custom-destination create --name <name> --url <url> --username <user> --password <pass>
-dd logs custom-destination update <id> [--name <name>] [--url <url>] [--username <user>] [--password <pass>] [--query <query>] [--enabled]
+dd logs custom-destination update <id> [--name <name>] [--query <query>]
 dd logs custom-destination delete <id> --yes
 dd logs restriction-query list
 dd logs restriction-query show <id>

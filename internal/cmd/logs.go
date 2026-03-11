@@ -163,7 +163,9 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 			}
 
 			from := time.Now().Add(-15 * time.Minute)
-			seen := map[string]struct{}{}
+			// two-generation dedup: keep only current and previous poll's IDs
+			var prevSeen map[string]struct{}
+			currSeen := map[string]struct{}{}
 
 			if interval <= 0 {
 				return fmt.Errorf("--interval must be positive")
@@ -191,13 +193,16 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
 				} else {
+					nextSeen := map[string]struct{}{}
 					for _, log := range resp.GetData() {
 						id := log.GetId()
 						if id != "" {
-							if _, ok := seen[id]; ok {
+							_, inPrev := prevSeen[id]
+							_, inCurr := currSeen[id]
+							if inPrev || inCurr {
 								continue
 							}
-							seen[id] = struct{}{}
+							nextSeen[id] = struct{}{}
 						}
 						attrs := log.GetAttributes()
 						ts := ""
@@ -211,6 +216,8 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 							attrs.GetMessage(),
 						)
 					}
+					prevSeen = currSeen
+					currSeen = nextSeen
 					from = to
 				}
 
@@ -404,12 +411,22 @@ func formatBucketValue(v datadogV2.LogsAggregateBucketValue) string {
 }
 
 // parseRelativeTime parses "now", "now-<duration>", or RFC3339 into time.Time.
+// Supports Go duration units plus "d" for days (e.g. "now-7d" = 7*24h ago).
 func parseRelativeTime(s string) (time.Time, error) {
 	if s == "now" {
 		return time.Now(), nil
 	}
 	if strings.HasPrefix(s, "now-") {
-		d, err := time.ParseDuration(s[4:])
+		raw := s[4:]
+		// expand "d" day suffix to equivalent hours before parsing
+		if strings.HasSuffix(raw, "d") {
+			var days int64
+			if _, err := fmt.Sscanf(raw[:len(raw)-1], "%d", &days); err != nil || days <= 0 {
+				return time.Time{}, fmt.Errorf("invalid relative time %q", s)
+			}
+			return time.Now().Add(-time.Duration(days) * 24 * time.Hour), nil
+		}
+		d, err := time.ParseDuration(raw)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("invalid relative time %q: %w", s, err)
 		}

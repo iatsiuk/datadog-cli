@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -156,8 +157,7 @@ func TestLogsPipelineCreateFlags(t *testing.T) {
 
 	var capturedBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody = make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(capturedBody)
+		capturedBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockPipelineResponse) //nolint:errcheck
 	}))
@@ -209,8 +209,7 @@ func TestLogsPipelineUpdateFlags(t *testing.T) {
 
 	var capturedBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody = make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(capturedBody)
+		capturedBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockPipelineResponse) //nolint:errcheck
 	}))

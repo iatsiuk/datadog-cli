@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,7 +107,7 @@ func TestLogsArchiveListTableOutput(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"ID", "NAME", "TYPE", "DESTINATION", "arc-001", "web-archive", "arc-002", "api-archive"} {
+	for _, want := range []string{"ID", "NAME", "DESTINATION", "arc-001", "web-archive", "arc-002", "api-archive"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
@@ -181,8 +182,7 @@ func TestLogsArchiveCreateFlags(t *testing.T) {
 
 	var capturedBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody = make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(capturedBody)
+		capturedBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockArchiveResponse) //nolint:errcheck
 	}))
@@ -246,8 +246,7 @@ func TestLogsArchiveUpdateFlags(t *testing.T) {
 
 	var capturedBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody = make([]byte, r.ContentLength)
-		_, _ = r.Body.Read(capturedBody)
+		capturedBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockArchiveResponse) //nolint:errcheck
 	}))
