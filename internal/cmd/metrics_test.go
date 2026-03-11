@@ -621,6 +621,225 @@ func TestMetricsTimeseriesJSONOutput(t *testing.T) {
 	}
 }
 
+func buildMetricsSubmitCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	metrics := &cobra.Command{Use: "metrics"}
+	metrics.AddCommand(newMetricsSubmitCmd(mkAPI))
+	root.AddCommand(metrics)
+	return root, buf
+}
+
+const mockMetricsSubmitResponse = `{"errors": []}`
+
+func TestMetricsSubmitFlagsRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit", "--type", "gauge", "--points", "1700000000:42.0"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --metric is missing")
+	}
+}
+
+func TestMetricsSubmitFlagsParsed(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit",
+		"--metric", "custom.test.metric",
+		"--type", "gauge",
+		"--points", "1700000000:42.0",
+		"--tags", "env:prod",
+		"--tags", "host:web-01",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedBody, "custom.test.metric") {
+		t.Errorf("metric name not found in request body: %s", capturedBody)
+	}
+	if !strings.Contains(capturedBody, "env:prod") {
+		t.Errorf("tag not found in request body: %s", capturedBody)
+	}
+}
+
+func TestMetricsSubmitGaugeType(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit",
+		"--metric", "custom.gauge",
+		"--type", "gauge",
+		"--points", "1700000000:99.5",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// gauge type = 3 in the API
+	if !strings.Contains(capturedBody, `"type":3`) {
+		t.Errorf("gauge type (3) not found in body: %s", capturedBody)
+	}
+}
+
+func TestMetricsSubmitCountType(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit",
+		"--metric", "custom.count",
+		"--type", "count",
+		"--points", "1700000000:5",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// count type = 1 in the API
+	if !strings.Contains(capturedBody, `"type":1`) {
+		t.Errorf("count type (1) not found in body: %s", capturedBody)
+	}
+}
+
+func TestMetricsSubmitRateType(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit",
+		"--metric", "custom.rate",
+		"--type", "rate",
+		"--points", "1700000000:1.5",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// rate type = 2 in the API
+	if !strings.Contains(capturedBody, `"type":2`) {
+		t.Errorf("rate type (2) not found in body: %s", capturedBody)
+	}
+}
+
+func TestMetricsSubmitInvalidType(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit",
+		"--metric", "custom.metric",
+		"--type", "invalid",
+		"--points", "1700000000:42.0",
+	})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for invalid type")
+	}
+}
+
+func TestMetricsSubmitInvalidPoints(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit",
+		"--metric", "custom.metric",
+		"--type", "gauge",
+		"--points", "badformat",
+	})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for invalid points format")
+	}
+}
+
+func TestMetricsSubmitMultiplePoints(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := &bytes.Buffer{}
+		_, _ = buf.ReadFrom(r.Body)
+		capturedBody = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsSubmitResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMetricsSubmitCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "submit",
+		"--metric", "custom.metric",
+		"--type", "gauge",
+		"--points", "1700000000:10.0",
+		"--points", "1700000060:20.0",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedBody, "1700000060") {
+		t.Errorf("second point timestamp not found in body: %s", capturedBody)
+	}
+}
+
 func TestMetricsQueryRelativeTime(t *testing.T) {
 	t.Parallel()
 

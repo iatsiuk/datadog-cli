@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
@@ -54,6 +55,7 @@ func NewMetricsCommand() *cobra.Command {
 	cmd.AddCommand(newMetricsListCmd(defaultMetricsV1API))
 	cmd.AddCommand(newMetricsScalarCmd(defaultMetricsV2API))
 	cmd.AddCommand(newMetricsTimeseriesCmd(defaultMetricsV2API))
+	cmd.AddCommand(newMetricsSubmitCmd(defaultMetricsV2API))
 	return cmd
 }
 
@@ -410,6 +412,98 @@ func newMetricsTimeseriesCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command
 	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-1h) (required)")
 	cmd.Flags().StringVar(&toStr, "to", "now", "end time: unix timestamp or relative (e.g. now)")
 	return cmd
+}
+
+func newMetricsSubmitCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
+	var (
+		metricName string
+		metricType string
+		points     []string
+		tags       []string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "submit",
+		Short: "Submit metrics to Datadog",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if metricName == "" {
+				return fmt.Errorf("--metric is required")
+			}
+			if len(points) == 0 {
+				return fmt.Errorf("--points is required")
+			}
+
+			var intakeType datadogV2.MetricIntakeType
+			switch metricType {
+			case "gauge":
+				intakeType = datadogV2.METRICINTAKETYPE_GAUGE
+			case "count":
+				intakeType = datadogV2.METRICINTAKETYPE_COUNT
+			case "rate":
+				intakeType = datadogV2.METRICINTAKETYPE_RATE
+			default:
+				return fmt.Errorf("--type: invalid value %q (must be gauge, count, or rate)", metricType)
+			}
+
+			metricPoints, err := parseMetricPoints(points)
+			if err != nil {
+				return fmt.Errorf("--points: %w", err)
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			series := datadogV2.NewMetricSeries(metricName, metricPoints)
+			series.Type = &intakeType
+			if len(tags) > 0 {
+				series.Tags = tags
+			}
+
+			payload := datadogV2.NewMetricPayload([]datadogV2.MetricSeries{*series})
+			_, httpResp, err := mapi.api.SubmitMetrics(mapi.ctx, *payload)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("submit metrics: %w", err)
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "submitted")
+			return err
+		},
+	}
+
+	cmd.Flags().StringVar(&metricName, "metric", "", "metric name (required)")
+	cmd.Flags().StringVar(&metricType, "type", "gauge", "metric type: gauge, count, rate")
+	cmd.Flags().StringArrayVar(&points, "points", nil, "data points in timestamp:value format (repeatable)")
+	cmd.Flags().StringArrayVar(&tags, "tags", nil, "tags in key:value format (repeatable)")
+	return cmd
+}
+
+// parseMetricPoints parses a slice of "timestamp:value" strings into MetricPoint slice.
+func parseMetricPoints(rawPoints []string) ([]datadogV2.MetricPoint, error) {
+	pts := make([]datadogV2.MetricPoint, 0, len(rawPoints))
+	for _, raw := range rawPoints {
+		parts := strings.SplitN(raw, ":", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid format %q (expected timestamp:value)", raw)
+		}
+		ts, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timestamp in %q: %w", raw, err)
+		}
+		val, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value in %q: %w", raw, err)
+		}
+		pt := datadogV2.NewMetricPoint()
+		pt.Timestamp = &ts
+		pt.Value = &val
+		pts = append(pts, *pt)
+	}
+	return pts, nil
 }
 
 // parseUnixOrRelative parses a unix timestamp string or relative time expression.
