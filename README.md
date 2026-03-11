@@ -83,7 +83,7 @@ dd logs index delete <name> --yes
 dd logs pipeline list
 dd logs pipeline show <id>
 dd logs pipeline create --name <name> [--filter <query>] [--enabled]
-dd logs pipeline update <id> [--name <name>] [--filter <query>] [--enabled]
+dd logs pipeline update <id> --name <name> [--filter <query>] [--enabled]
 dd logs pipeline delete <id> --yes
 dd logs archive list
 dd logs archive show <id>
