@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"time"
@@ -78,8 +77,9 @@ func newLogsSearchCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 				return err
 			}
 
-			if limit <= 0 || limit > math.MaxInt32 {
-				return fmt.Errorf("--limit must be between 1 and %d", math.MaxInt32)
+			const maxPageLimit = 1000
+			if limit <= 0 || limit > maxPageLimit {
+				return fmt.Errorf("--limit must be between 1 and %d", maxPageLimit)
 			}
 			pageLimit := int32(limit) //nolint:gosec
 			opts := datadogV2.NewListLogsGetOptionalParameters().
@@ -196,14 +196,15 @@ func newLogsTailCmd(mkAPI func() (*logsAPI, error)) *cobra.Command {
 					nextSeen := map[string]struct{}{}
 					for _, log := range resp.GetData() {
 						id := log.GetId()
-						if id != "" {
-							_, inPrev := prevSeen[id]
-							_, inCurr := currSeen[id]
-							if inPrev || inCurr {
-								continue
-							}
-							nextSeen[id] = struct{}{}
+						if id == "" {
+							continue
 						}
+						_, inPrev := prevSeen[id]
+						_, inCurr := currSeen[id]
+						if inPrev || inCurr {
+							continue
+						}
+						nextSeen[id] = struct{}{}
 						attrs := log.GetAttributes()
 						ts := ""
 						if t := attrs.Timestamp; t != nil {
