@@ -109,8 +109,8 @@
 - [x] run linter: `make build`
 
 ### Task 11: [Final] Update documentation
-- [ ] update CLAUDE.md API reference section with Dashboards/Dashboard Lists APIs
-- [ ] update README.md with dashboards command examples
+- [x] update CLAUDE.md API reference section with Dashboards/Dashboard Lists APIs
+- [x] update README.md with dashboards command examples
 
 ## Technical Details
 - **Layout types**: `ordered` (grid-based) or `free` (pixel-positioned)
