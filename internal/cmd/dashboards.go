@@ -115,20 +115,20 @@ func newDashboardListsShowCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.C
 				return fmt.Errorf("get dashboard list: %w", err)
 			}
 
-			items, itemsResp, err := lapi.v2api.GetDashboardListItems(lapi.ctx, listID)
-			if itemsResp != nil {
-				_ = itemsResp.Body.Close()
-			}
-			if err != nil {
-				return fmt.Errorf("get dashboard list items: %w", err)
-			}
-
 			asJSON := false
 			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
 				asJSON = f.Value.String() == "true"
 			}
 			if asJSON {
 				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			items, itemsResp, err := lapi.v2api.GetDashboardListItems(lapi.ctx, listID)
+			if itemsResp != nil {
+				_ = itemsResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get dashboard list items: %w", err)
 			}
 
 			idStr := strconv.FormatInt(resp.GetId(), 10)
@@ -506,13 +506,14 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 
 func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command {
 	var (
-		id          string
-		bodyJSON    string
-		title       string
-		layoutType  string
-		description string
-		tags        string
-		widgetsJSON string
+		id           string
+		bodyJSON     string
+		title        string
+		layoutType   string
+		description  string
+		tags         string
+		widgetsJSON  string
+		templateVars string
 	)
 	cmd := &cobra.Command{
 		Use:   "update",
@@ -561,6 +562,13 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 					}
 					body.Widgets = widgets
 				}
+				if templateVars != "" {
+					var tvars []datadogV1.DashboardTemplateVariable
+					if err := json.Unmarshal([]byte(templateVars), &tvars); err != nil {
+						return fmt.Errorf("parse --template-vars-json: %w", err)
+					}
+					body.TemplateVariables = tvars
+				}
 			}
 
 			dapi, err := mkAPI()
@@ -601,6 +609,7 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 	cmd.Flags().StringVar(&description, "description", "", "dashboard description")
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags")
 	cmd.Flags().StringVar(&widgetsJSON, "widgets-json", "", "widgets as JSON array")
+	cmd.Flags().StringVar(&templateVars, "template-vars-json", "", "template variables as JSON array")
 	return cmd
 }
 
