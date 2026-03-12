@@ -53,11 +53,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 3: Dashboard show with tests
-- [ ] write tests for `dashboards show --id <id>` -- full dashboard details
-- [ ] write tests for `dashboards show` -- JSON output (full widget tree)
-- [ ] write tests for `dashboards show` -- missing required `--id` flag
-- [ ] implement `newDashboardsShowCmd` -- call `GetDashboard`, display details
-- [ ] run `make build` -- must pass
+- [x] write tests for `dashboards show --id <id>` -- full dashboard details
+- [x] write tests for `dashboards show` -- JSON output (full widget tree)
+- [x] write tests for `dashboards show` -- missing required `--id` flag
+- [x] implement `newDashboardsShowCmd` -- call `GetDashboard`, display details
+- [x] run `make build` -- must pass
 
 ### Task 4: Dashboard create with tests
 - [ ] write tests for `dashboards create` -- capture request body with title, layout_type, widgets (from JSON file/string)

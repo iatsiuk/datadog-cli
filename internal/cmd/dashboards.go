@@ -33,6 +33,61 @@ func NewDashboardsCommand() *cobra.Command {
 		Short: "Manage Datadog dashboards",
 	}
 	cmd.AddCommand(newDashboardsListCmd(defaultDashboardsAPI))
+	cmd.AddCommand(newDashboardsShowCmd(defaultDashboardsAPI))
+	return cmd
+}
+
+func newDashboardsShowCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command {
+	var id string
+	cmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show a dashboard",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			dapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := dapi.api.GetDashboard(dapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get dashboard: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			created := ""
+			if t := resp.CreatedAt; t != nil {
+				created = t.UTC().Format("2006-01-02")
+			}
+			modified := ""
+			if t := resp.ModifiedAt; t != nil {
+				modified = t.UTC().Format("2006-01-02")
+			}
+			headers := []string{"ID", "TITLE", "LAYOUT", "URL", "CREATED", "MODIFIED"}
+			rows := [][]string{{
+				resp.GetId(),
+				resp.GetTitle(),
+				string(resp.GetLayoutType()),
+				resp.GetUrl(),
+				created,
+				modified,
+			}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "dashboard ID (required)")
 	return cmd
 }
 

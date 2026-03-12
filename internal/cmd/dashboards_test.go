@@ -15,6 +15,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const mockDashboardShowResponse = `{
+	"id": "abc-123",
+	"title": "My Dashboard",
+	"layout_type": "ordered",
+	"url": "/dashboard/abc-123/my-dashboard",
+	"created_at": "2024-01-15T10:00:00.000Z",
+	"modified_at": "2024-01-20T15:30:00.000Z",
+	"author_handle": "user@example.com",
+	"widgets": []
+}`
+
 const mockDashboardsListResponse = `{
 	"dashboards": [
 		{
@@ -56,6 +67,87 @@ func buildDashboardsListCmd(mkAPI func() (*dashboardsAPI, error)) (*cobra.Comman
 	dashboards.AddCommand(newDashboardsListCmd(mkAPI))
 	root.AddCommand(dashboards)
 	return root, buf
+}
+
+func buildDashboardsShowCmd(mkAPI func() (*dashboardsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	dashboards := &cobra.Command{Use: "dashboards"}
+	dashboards.AddCommand(newDashboardsShowCmd(mkAPI))
+	root.AddCommand(dashboards)
+	return root, buf
+}
+
+func TestDashboardsShowTableOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardsShowCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "show", "--id", "abc-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "abc-123") {
+		t.Errorf("request path %q missing dashboard id", capturedPath)
+	}
+	out := buf.String()
+	for _, want := range []string{"ID", "TITLE", "LAYOUT", "URL", "CREATED", "MODIFIED", "abc-123", "My Dashboard", "ordered"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDashboardsShowJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardsShowCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "show", "--id", "abc-123", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["id"] != "abc-123" {
+		t.Errorf("got id %q, want %q", result["id"], "abc-123")
+	}
+}
+
+func TestDashboardsShowMissingID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardsShowCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "show"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --id is missing")
+	}
+	if !strings.Contains(err.Error(), "--id is required") {
+		t.Errorf("unexpected error: %v", err)
+	}
 }
 
 func TestNewDashboardsCommand_Subcommands(t *testing.T) {
