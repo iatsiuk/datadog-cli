@@ -39,6 +39,7 @@ func NewMonitorsCommand() *cobra.Command {
 	cmd.AddCommand(newMonitorsShowCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsSearchCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsCreateCmd(defaultMonitorsAPI))
+	cmd.AddCommand(newMonitorsUpdateCmd(defaultMonitorsAPI))
 	return cmd
 }
 
@@ -337,5 +338,116 @@ func newMonitorsCreateCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&tagsStr, "tags", "", "comma-separated tags, e.g. env:prod,service:web")
 	cmd.Flags().Int64Var(&priority, "priority", 0, "priority 1 (high) to 5 (low)")
 	cmd.Flags().StringVar(&thresholds, "thresholds", "", "thresholds as JSON, e.g. {\"critical\":90,\"warning\":80}")
+	return cmd
+}
+
+func newMonitorsUpdateCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
+	var (
+		monitorID  int64
+		name       string
+		query      string
+		message    string
+		tagsStr    string
+		priority   int64
+		thresholds string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update a monitor",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if monitorID == 0 {
+				return errMonitorIDRequired
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			existing, httpResp, err := mapi.api.GetMonitor(mapi.ctx, monitorID, *datadogV1.NewGetMonitorOptionalParameters())
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get monitor: %w", err)
+			}
+
+			body := datadogV1.NewMonitorUpdateRequest()
+			// start from existing values
+			body.SetName(existing.GetName())
+			body.SetQuery(existing.GetQuery())
+			body.SetMessage(existing.GetMessage())
+			body.SetTags(existing.GetTags())
+			if p := existing.GetPriority(); p != 0 {
+				body.SetPriority(p)
+			}
+
+			// override with explicitly changed flags
+			if cmd.Flags().Changed("name") {
+				body.SetName(name)
+			}
+			if cmd.Flags().Changed("query") {
+				body.SetQuery(query)
+			}
+			if cmd.Flags().Changed("message") {
+				body.SetMessage(message)
+			}
+			if cmd.Flags().Changed("tags") {
+				rawTags := strings.Split(tagsStr, ",")
+				tags := make([]string, len(rawTags))
+				for i, t := range rawTags {
+					tags[i] = strings.TrimSpace(t)
+				}
+				body.SetTags(tags)
+			}
+			if cmd.Flags().Changed("priority") {
+				body.SetPriority(priority)
+			}
+			if cmd.Flags().Changed("thresholds") {
+				var thr datadogV1.MonitorThresholds
+				if err := json.Unmarshal([]byte(thresholds), &thr); err != nil {
+					return fmt.Errorf("invalid --thresholds JSON: %w", err)
+				}
+				opts := body.GetOptions()
+				opts.SetThresholds(thr)
+				body.SetOptions(opts)
+			}
+
+			m, httpResp, err := mapi.api.UpdateMonitor(mapi.ctx, monitorID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update monitor: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), m)
+			}
+
+			rows := [][]string{
+				{"ID", fmt.Sprintf("%d", m.GetId())},
+				{"NAME", m.GetName()},
+				{"TYPE", string(m.GetType())},
+				{"STATUS", string(m.GetOverallState())},
+				{"QUERY", m.GetQuery()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+
+	cmd.Flags().Int64Var(&monitorID, "id", 0, "monitor ID (required)")
+	cmd.Flags().StringVar(&name, "name", "", "monitor name")
+	cmd.Flags().StringVar(&query, "query", "", "monitor query")
+	cmd.Flags().StringVar(&message, "message", "", "notification message")
+	cmd.Flags().StringVar(&tagsStr, "tags", "", "comma-separated tags")
+	cmd.Flags().Int64Var(&priority, "priority", 0, "priority 1 (high) to 5 (low)")
+	cmd.Flags().StringVar(&thresholds, "thresholds", "", "thresholds as JSON")
 	return cmd
 }

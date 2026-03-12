@@ -444,6 +444,114 @@ func TestMonitorsCreate_OptionalFlags(t *testing.T) {
 	}
 }
 
+func buildMonitorsUpdateCmd(mkAPI func() (*monitorsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	monitors := &cobra.Command{Use: "monitors"}
+	monitors.AddCommand(newMonitorsUpdateCmd(mkAPI))
+	root.AddCommand(monitors)
+	return root, buf
+}
+
+const mockMonitorUpdateResponse = `{
+	"id": 12345,
+	"name": "CPU High Updated",
+	"type": "metric alert",
+	"overall_state": "No Data",
+	"query": "avg(last_5m):avg:system.cpu.user{*} > 95",
+	"message": "Updated message",
+	"tags": ["env:prod"]
+}`
+
+func TestMonitorsUpdate_RequestBody(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockMonitorShowResponse) //nolint:errcheck
+			return
+		}
+		if r.Method == http.MethodPut {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		fmt.Fprint(w, mockMonitorUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMonitorsUpdateCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{
+		"monitors", "update",
+		"--id", "12345",
+		"--name", "CPU High Updated",
+		"--query", "avg(last_5m):avg:system.cpu.user{*} > 95",
+		"--message", "Updated message",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	body := string(capturedBody)
+	// > is HTML-escaped to \u003e in Go JSON output
+	for _, want := range []string{"CPU High Updated", "system.cpu.user", "95", "Updated message"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("request body missing %q\nbody: %s", want, body)
+		}
+	}
+}
+
+func TestMonitorsUpdate_PreservesUnchangedFields(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockMonitorShowResponse) //nolint:errcheck
+			return
+		}
+		if r.Method == http.MethodPut {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		fmt.Fprint(w, mockMonitorUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	// only change name, query and message should come from the existing monitor
+	root, _ := buildMonitorsUpdateCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{
+		"monitors", "update",
+		"--id", "12345",
+		"--name", "CPU High Updated",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	body := string(capturedBody)
+	// > is HTML-escaped to \u003e in Go JSON; check for surrounding context instead
+	if !strings.Contains(body, "system.cpu.user") || !strings.Contains(body, "90") {
+		t.Errorf("request body should preserve original query\nbody: %s", body)
+	}
+	if !strings.Contains(body, "CPU High Updated") {
+		t.Errorf("request body missing updated name\nbody: %s", body)
+	}
+}
+
+func TestMonitorsUpdate_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildMonitorsUpdateCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "update", "--name", "New Name"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --id is missing")
+	}
+}
+
 func TestMonitorsSearch_Pagination(t *testing.T) {
 	t.Parallel()
 	var capturedPage, capturedPerPage string
