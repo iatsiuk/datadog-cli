@@ -37,6 +37,7 @@ func NewRUMCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newRUMSearchCmd(defaultRUMAPI))
 	cmd.AddCommand(newRUMAggregateCmd(defaultRUMAPI))
+	cmd.AddCommand(newRUMAppCmd(defaultRUMAPI))
 	return cmd
 }
 
@@ -318,4 +319,249 @@ func formatRUMBucketValue(v datadogV2.RUMAggregateBucketValue) string {
 	default:
 		return ""
 	}
+}
+
+func newRUMAppCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "app",
+		Short: "Manage RUM applications",
+	}
+	cmd.AddCommand(newRUMAppListCmd(mkAPI))
+	cmd.AddCommand(newRUMAppShowCmd(mkAPI))
+	cmd.AddCommand(newRUMAppCreateCmd(mkAPI))
+	cmd.AddCommand(newRUMAppUpdateCmd(mkAPI))
+	cmd.AddCommand(newRUMAppDeleteCmd(mkAPI))
+	return cmd
+}
+
+func newRUMAppListCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List RUM applications",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := rapi.api.GetRUMApplications(rapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list rum applications: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				data := resp.GetData()
+				if data == nil {
+					data = []datadogV2.RUMApplicationList{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"ID", "NAME", "TYPE"}
+			var rows [][]string
+			for _, app := range resp.GetData() {
+				attrs := app.GetAttributes()
+				id := app.GetId()
+				rows = append(rows, []string{id, attrs.GetName(), attrs.GetType()})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newRUMAppShowCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show a RUM application",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := rapi.api.GetRUMApplication(rapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get rum application: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			app := resp.GetData()
+			attrs := app.GetAttributes()
+			rows := [][]string{
+				{"ID", app.GetId()},
+				{"NAME", attrs.GetName()},
+				{"TYPE", attrs.GetType()},
+				{"CLIENT TOKEN", attrs.GetClientToken()},
+				{"CREATED BY", attrs.GetCreatedByHandle()},
+				{"UPDATED BY", attrs.GetUpdatedByHandle()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+}
+
+func newRUMAppCreateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
+	var (
+		name    string
+		appType string
+	)
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a RUM application",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewRUMApplicationCreateAttributes(name)
+			if appType != "" {
+				attrs.SetType(appType)
+			}
+			data := datadogV2.NewRUMApplicationCreate(*attrs, datadogV2.RUMAPPLICATIONCREATETYPE_RUM_APPLICATION_CREATE)
+			req := datadogV2.NewRUMApplicationCreateRequest(*data)
+
+			resp, httpResp, err := rapi.api.CreateRUMApplication(rapi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create rum application: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			app := resp.GetData()
+			attrs2 := app.GetAttributes()
+			rows := [][]string{
+				{"ID", app.GetId()},
+				{"NAME", attrs2.GetName()},
+				{"TYPE", attrs2.GetType()},
+				{"CLIENT TOKEN", attrs2.GetClientToken()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&name, "name", "", "application name (required)")
+	cmd.Flags().StringVar(&appType, "type", "browser", "application type: browser, ios, android, react-native, flutter, roku, electron, unity, kotlin-multiplatform")
+	return cmd
+}
+
+func newRUMAppUpdateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
+	var (
+		name    string
+		appType string
+	)
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update a RUM application",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			updateAttrs := datadogV2.NewRUMApplicationUpdateAttributes()
+			if name != "" {
+				updateAttrs.SetName(name)
+			}
+			if appType != "" {
+				updateAttrs.SetType(appType)
+			}
+
+			data := datadogV2.NewRUMApplicationUpdate(id, datadogV2.RUMAPPLICATIONUPDATETYPE_RUM_APPLICATION_UPDATE)
+			data.SetAttributes(*updateAttrs)
+			req := datadogV2.NewRUMApplicationUpdateRequest(*data)
+
+			resp, httpResp, err := rapi.api.UpdateRUMApplication(rapi.ctx, id, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update rum application: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			app := resp.GetData()
+			attrs := app.GetAttributes()
+			rows := [][]string{
+				{"ID", app.GetId()},
+				{"NAME", attrs.GetName()},
+				{"TYPE", attrs.GetType()},
+				{"CLIENT TOKEN", attrs.GetClientToken()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&name, "name", "", "new application name")
+	cmd.Flags().StringVar(&appType, "type", "", "new application type")
+	return cmd
+}
+
+func newRUMAppDeleteCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a RUM application",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fmt.Errorf("requires --yes flag to confirm deletion")
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := rapi.api.DeleteRUMApplication(rapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete rum application: %w", err)
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "deleted")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
 }

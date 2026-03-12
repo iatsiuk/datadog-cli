@@ -385,3 +385,195 @@ func TestRUMAggregateJSONOutput(t *testing.T) {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
 	}
 }
+
+// rum app tests
+
+const mockRUMAppListResponse = `{
+	"data": [{
+		"id": "app-id-1",
+		"type": "rum_application",
+		"attributes": {
+			"application_id": "app-id-1",
+			"name": "Web Store",
+			"type": "browser",
+			"created_at": 1700000000000,
+			"created_by_handle": "admin@example.com",
+			"updated_at": 1700000001000,
+			"updated_by_handle": "admin@example.com",
+			"org_id": 12345
+		}
+	}]
+}`
+
+const mockRUMAppResponse = `{
+	"data": {
+		"id": "app-id-1",
+		"type": "rum_application",
+		"attributes": {
+			"application_id": "app-id-1",
+			"name": "Web Store",
+			"type": "browser",
+			"client_token": "pub123abc",
+			"created_at": 1700000000000,
+			"created_by_handle": "admin@example.com",
+			"updated_at": 1700000001000,
+			"updated_by_handle": "admin@example.com",
+			"org_id": 12345
+		}
+	}
+}`
+
+func buildRUMAppCmd(mkAPI func() (*rumAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	rum := &cobra.Command{Use: "rum"}
+	rum.AddCommand(newRUMAppCmd(mkAPI))
+	root.AddCommand(rum)
+	return root, buf
+}
+
+func TestRUMAppListTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAppListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "NAME", "TYPE", "app-id-1", "Web Store", "browser"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMAppShowTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "show", "app-id-1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"app-id-1", "Web Store", "browser", "pub123abc"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMAppCreateFlags(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", "ios"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var req map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	data, _ := req["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["name"]; got != "My App" {
+		t.Errorf("name = %v, want My App", got)
+	}
+	if got := attrs["type"]; got != "ios" {
+		t.Errorf("type = %v, want ios", got)
+	}
+}
+
+func TestRUMAppUpdateFlags(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "update", "app-id-1", "--name", "Updated App"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var req map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	data, _ := req["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["name"]; got != "Updated App" {
+		t.Errorf("name = %v, want Updated App", got)
+	}
+	if got := data["id"]; got != "app-id-1" {
+		t.Errorf("id = %v, want app-id-1", got)
+	}
+}
+
+func TestRUMAppDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "delete", "app-id-1"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --yes flag")
+	}
+}
+
+func TestRUMAppDeleteWithYes(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "delete", "app-id-1", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !called {
+		t.Error("expected DELETE request to be made")
+	}
+}
