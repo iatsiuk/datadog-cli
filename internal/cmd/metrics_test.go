@@ -641,6 +641,73 @@ func TestMetricsScalarMultiGroupByTableOutput(t *testing.T) {
 	checkRow("api", "staging", "13.7")
 }
 
+const mockMetricsScalarMultiDataGroupByResponse = `{
+	"data": {
+		"type": "scalar_response",
+		"attributes": {
+			"columns": [
+				{
+					"name": "service",
+					"type": "group",
+					"values": [["web"], ["api"]]
+				},
+				{
+					"name": "p99",
+					"type": "number",
+					"values": [99.1, 88.2]
+				},
+				{
+					"name": "p50",
+					"type": "number",
+					"values": [50.3, 45.6]
+				}
+			]
+		}
+	}
+}`
+
+func TestMetricsScalarMultiDataGroupByTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsScalarMultiDataGroupByResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsScalarCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "scalar",
+		"--query", "avg:system.cpu.user{*} by {service}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, hdr := range []string{"NAME", "SERVICE", "VALUE"} {
+		if !strings.Contains(out, hdr) {
+			t.Errorf("output missing header %q:\n%s", hdr, out)
+		}
+	}
+	checkRow := func(name, group, value string) {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, name) && strings.Contains(line, group) {
+				if !strings.Contains(line, value) {
+					t.Errorf("row with name=%q group=%q missing value %q:\n%s", name, group, value, out)
+				}
+				return
+			}
+		}
+		t.Errorf("no row with name=%q group=%q:\n%s", name, group, out)
+	}
+	checkRow("p99", "web", "99.1")
+	checkRow("p99", "api", "88.2")
+	checkRow("p50", "web", "50.3")
+	checkRow("p50", "api", "45.6")
+}
+
 func buildMetricsTimeseriesCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
 	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")

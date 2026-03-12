@@ -327,16 +327,23 @@ func newMetricsScalarCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
 					}
 				}
 			} else {
+				multiData := len(dataCols) > 1
+				if multiData {
+					headers = append(headers, "NAME")
+				}
 				for _, gc := range groupCols {
 					headers = append(headers, strings.ToUpper(gc.GetName()))
 				}
 				headers = append(headers, "VALUE")
-				if len(dataCols) > 0 {
-					for i, v := range dataCols[0].GetValues() {
+				for _, dc := range dataCols {
+					for i, v := range dc.GetValues() {
 						if v == nil {
 							continue
 						}
-						row := make([]string, 0, len(groupCols)+1)
+						row := make([]string, 0, len(headers))
+						if multiData {
+							row = append(row, dc.GetName())
+						}
 						for _, gc := range groupCols {
 							gcVals := gc.GetValues()
 							if i < len(gcVals) && len(gcVals[i]) > 0 {
