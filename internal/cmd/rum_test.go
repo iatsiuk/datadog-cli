@@ -577,3 +577,228 @@ func TestRUMAppDeleteWithYes(t *testing.T) {
 		t.Error("expected DELETE request to be made")
 	}
 }
+
+// rum metric tests
+
+const mockRUMMetricsListResponse = `{
+	"data": [{
+		"id": "my.rum.metric",
+		"type": "rum_metrics",
+		"attributes": {
+			"event_type": "view",
+			"compute": {
+				"aggregation_type": "count"
+			},
+			"filter": {
+				"query": "@view.url:*"
+			},
+			"group_by": [{"path": "@view.url"}]
+		}
+	}]
+}`
+
+const mockRUMMetricResponse = `{
+	"data": {
+		"id": "my.rum.metric",
+		"type": "rum_metrics",
+		"attributes": {
+			"event_type": "view",
+			"compute": {
+				"aggregation_type": "count"
+			},
+			"filter": {
+				"query": "@view.url:*"
+			},
+			"group_by": [{"path": "@view.url"}]
+		}
+	}
+}`
+
+func newTestRUMMetricsAPI(srv *httptest.Server) func() (*rumMetricsAPI, error) {
+	return func() (*rumMetricsAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &rumMetricsAPI{api: datadogV2.NewRumMetricsApi(c), ctx: apiCtx}, nil
+	}
+}
+
+func buildRUMMetricCmd(mkAPI func() (*rumMetricsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	rum := &cobra.Command{Use: "rum"}
+	rum.AddCommand(newRUMMetricCmd(mkAPI))
+	root.AddCommand(rum)
+	return root, buf
+}
+
+func TestRUMMetricListTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMMetricsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMMetricCmd(newTestRUMMetricsAPI(srv))
+	root.SetArgs([]string{"rum", "metric", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "EVENT TYPE", "COMPUTE", "FILTER", "my.rum.metric", "view", "count", "@view.url:*"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMMetricShowTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMMetricResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMMetricCmd(newTestRUMMetricsAPI(srv))
+	root.SetArgs([]string{"rum", "metric", "show", "my.rum.metric"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"my.rum.metric", "view", "count", "@view.url:*"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMMetricCreateFlags(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMMetricResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMMetricCmd(newTestRUMMetricsAPI(srv))
+	root.SetArgs([]string{
+		"rum", "metric", "create",
+		"--id", "my.rum.metric",
+		"--compute", "count",
+		"--event-type", "view",
+		"--filter", "@view.url:*",
+		"--group-by", "@view.url",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var req map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	data, _ := req["data"].(map[string]interface{})
+	if got := data["id"]; got != "my.rum.metric" {
+		t.Errorf("id = %v, want my.rum.metric", got)
+	}
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["event_type"]; got != "view" {
+		t.Errorf("event_type = %v, want view", got)
+	}
+	compute, _ := attrs["compute"].(map[string]interface{})
+	if got := compute["aggregation_type"]; got != "count" {
+		t.Errorf("aggregation_type = %v, want count", got)
+	}
+	filter, _ := attrs["filter"].(map[string]interface{})
+	if got := filter["query"]; got != "@view.url:*" {
+		t.Errorf("filter.query = %v, want @view.url:*", got)
+	}
+}
+
+func TestRUMMetricUpdateFlags(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMMetricResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMMetricCmd(newTestRUMMetricsAPI(srv))
+	root.SetArgs([]string{
+		"rum", "metric", "update", "my.rum.metric",
+		"--filter", "@view.url:/checkout",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var req map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	data, _ := req["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	filter, _ := attrs["filter"].(map[string]interface{})
+	if got := filter["query"]; got != "@view.url:/checkout" {
+		t.Errorf("filter.query = %v, want @view.url:/checkout", got)
+	}
+}
+
+func TestRUMMetricDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMMetricCmd(newTestRUMMetricsAPI(srv))
+	root.SetArgs([]string{"rum", "metric", "delete", "my.rum.metric"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --yes flag")
+	}
+}
+
+func TestRUMMetricDeleteWithYes(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMMetricCmd(newTestRUMMetricsAPI(srv))
+	root.SetArgs([]string{"rum", "metric", "delete", "my.rum.metric", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !called {
+		t.Error("expected DELETE request to be made")
+	}
+}

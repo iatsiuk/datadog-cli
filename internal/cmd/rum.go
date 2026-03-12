@@ -29,6 +29,20 @@ func defaultRUMAPI() (*rumAPI, error) {
 	return &rumAPI{api: datadogV2.NewRUMApi(c), ctx: ctx}, nil
 }
 
+type rumMetricsAPI struct {
+	api *datadogV2.RumMetricsApi
+	ctx context.Context
+}
+
+func defaultRUMMetricsAPI() (*rumMetricsAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &rumMetricsAPI{api: datadogV2.NewRumMetricsApi(c), ctx: ctx}, nil
+}
+
 // NewRUMCommand returns the rum cobra command group.
 func NewRUMCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -38,6 +52,7 @@ func NewRUMCommand() *cobra.Command {
 	cmd.AddCommand(newRUMSearchCmd(defaultRUMAPI))
 	cmd.AddCommand(newRUMAggregateCmd(defaultRUMAPI))
 	cmd.AddCommand(newRUMAppCmd(defaultRUMAPI))
+	cmd.AddCommand(newRUMMetricCmd(defaultRUMMetricsAPI))
 	return cmd
 }
 
@@ -564,4 +579,334 @@ func newRUMAppDeleteCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
+}
+
+func newRUMMetricCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "metric",
+		Short: "Manage RUM-based metrics",
+	}
+	cmd.AddCommand(newRUMMetricListCmd(mkAPI))
+	cmd.AddCommand(newRUMMetricShowCmd(mkAPI))
+	cmd.AddCommand(newRUMMetricCreateCmd(mkAPI))
+	cmd.AddCommand(newRUMMetricUpdateCmd(mkAPI))
+	cmd.AddCommand(newRUMMetricDeleteCmd(mkAPI))
+	return cmd
+}
+
+func newRUMMetricListCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List RUM-based metrics",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := mapi.api.ListRumMetrics(mapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list rum metrics: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				data := resp.GetData()
+				if data == nil {
+					data = []datadogV2.RumMetricResponseData{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"ID", "EVENT TYPE", "COMPUTE", "FILTER"}
+			var rows [][]string
+			for _, m := range resp.GetData() {
+				id := m.GetId()
+				attrs := m.GetAttributes()
+				compute := attrs.GetCompute()
+				eventType := string(attrs.GetEventType())
+				computeStr := string(compute.GetAggregationType())
+				if compute.Path != nil {
+					computeStr += ":" + *compute.Path
+				}
+				mFilter := attrs.GetFilter()
+				filter := mFilter.GetQuery()
+				rows = append(rows, []string{id, eventType, computeStr, filter})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newRUMMetricShowCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show a RUM-based metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := mapi.api.GetRumMetric(mapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get rum metric: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			m := resp.GetData()
+			attrs := m.GetAttributes()
+			compute := attrs.GetCompute()
+			computeStr := string(compute.GetAggregationType())
+			if compute.Path != nil {
+				computeStr += ":" + *compute.Path
+			}
+			groupByPaths := make([]string, 0, len(attrs.GetGroupBy()))
+			for _, g := range attrs.GetGroupBy() {
+				groupByPaths = append(groupByPaths, g.GetPath())
+			}
+			showFilter := attrs.GetFilter()
+			rows := [][]string{
+				{"ID", m.GetId()},
+				{"EVENT TYPE", string(attrs.GetEventType())},
+				{"COMPUTE", computeStr},
+				{"FILTER", showFilter.GetQuery()},
+				{"GROUP BY", strings.Join(groupByPaths, ", ")},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+}
+
+func newRUMMetricCreateCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command {
+	var (
+		metricID  string
+		compute   string
+		eventType string
+		filter    string
+		groupBy   string
+	)
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a RUM-based metric",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if metricID == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if compute == "" {
+				return fmt.Errorf("--compute is required")
+			}
+
+			aggType, metricPath, err := parseRUMMetricComputeSpec(compute)
+			if err != nil {
+				return fmt.Errorf("--compute: %w", err)
+			}
+
+			et, err := datadogV2.NewRumMetricEventTypeFromValue(eventType)
+			if err != nil {
+				return fmt.Errorf("--event-type: %w", err)
+			}
+
+			c := datadogV2.NewRumMetricCompute(aggType)
+			if metricPath != "" {
+				c.SetPath(metricPath)
+			}
+
+			attrs := datadogV2.NewRumMetricCreateAttributes(*c, *et)
+			if filter != "" {
+				f := datadogV2.NewRumMetricFilter(filter)
+				attrs.SetFilter(*f)
+			}
+			if groupBy != "" {
+				facets := strings.Split(groupBy, ",")
+				groups := make([]datadogV2.RumMetricGroupBy, 0, len(facets))
+				for _, facet := range facets {
+					facet = strings.TrimSpace(facet)
+					if facet != "" {
+						groups = append(groups, *datadogV2.NewRumMetricGroupBy(facet))
+					}
+				}
+				attrs.SetGroupBy(groups)
+			}
+
+			data := datadogV2.NewRumMetricCreateData(*attrs, metricID, datadogV2.RUMMETRICTYPE_RUM_METRICS)
+			req := datadogV2.NewRumMetricCreateRequest(*data)
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := mapi.api.CreateRumMetric(mapi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create rum metric: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			m := resp.GetData()
+			attrs2 := m.GetAttributes()
+			compute2 := attrs2.GetCompute()
+			computeStr := string(compute2.GetAggregationType())
+			if compute2.Path != nil {
+				computeStr += ":" + *compute2.Path
+			}
+			createFilter := attrs2.GetFilter()
+			rows := [][]string{
+				{"ID", m.GetId()},
+				{"EVENT TYPE", string(attrs2.GetEventType())},
+				{"COMPUTE", computeStr},
+				{"FILTER", createFilter.GetQuery()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&metricID, "id", "", "metric ID (required)")
+	cmd.Flags().StringVar(&compute, "compute", "", "compute spec: <aggregation>[:<path>] (required)")
+	cmd.Flags().StringVar(&eventType, "event-type", "view", "RUM event type: session, view, action, error, resource, long_task, vital")
+	cmd.Flags().StringVar(&filter, "filter", "", "filter query")
+	cmd.Flags().StringVar(&groupBy, "group-by", "", "comma-separated paths to group by")
+	return cmd
+}
+
+func newRUMMetricUpdateCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command {
+	var (
+		filter  string
+		groupBy string
+	)
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update a RUM-based metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+
+			updateAttrs := datadogV2.NewRumMetricUpdateAttributes()
+			if filter != "" {
+				f := datadogV2.NewRumMetricFilter(filter)
+				updateAttrs.SetFilter(*f)
+			}
+			if groupBy != "" {
+				facets := strings.Split(groupBy, ",")
+				groups := make([]datadogV2.RumMetricGroupBy, 0, len(facets))
+				for _, facet := range facets {
+					facet = strings.TrimSpace(facet)
+					if facet != "" {
+						groups = append(groups, *datadogV2.NewRumMetricGroupBy(facet))
+					}
+				}
+				updateAttrs.SetGroupBy(groups)
+			}
+
+			data := datadogV2.NewRumMetricUpdateData(*updateAttrs, datadogV2.RUMMETRICTYPE_RUM_METRICS)
+			req := datadogV2.NewRumMetricUpdateRequest(*data)
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := mapi.api.UpdateRumMetric(mapi.ctx, id, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update rum metric: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			m := resp.GetData()
+			attrs := m.GetAttributes()
+			compute := attrs.GetCompute()
+			computeStr := string(compute.GetAggregationType())
+			if compute.Path != nil {
+				computeStr += ":" + *compute.Path
+			}
+			updateFilter := attrs.GetFilter()
+			rows := [][]string{
+				{"ID", m.GetId()},
+				{"EVENT TYPE", string(attrs.GetEventType())},
+				{"COMPUTE", computeStr},
+				{"FILTER", updateFilter.GetQuery()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&filter, "filter", "", "new filter query")
+	cmd.Flags().StringVar(&groupBy, "group-by", "", "new comma-separated paths to group by")
+	return cmd
+}
+
+func newRUMMetricDeleteCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a RUM-based metric",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fmt.Errorf("requires --yes flag to confirm deletion")
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			httpResp, err := mapi.api.DeleteRumMetric(mapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete rum metric: %w", err)
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "deleted")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
+}
+
+// parseRUMMetricComputeSpec parses "count" or "sum:@metric.path" into aggregation type and path.
+func parseRUMMetricComputeSpec(s string) (datadogV2.RumMetricComputeAggregationType, string, error) {
+	parts := strings.SplitN(s, ":", 2)
+	aggType, err := datadogV2.NewRumMetricComputeAggregationTypeFromValue(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("unknown aggregation %q", parts[0])
+	}
+	path := ""
+	if len(parts) == 2 {
+		path = parts[1]
+	}
+	return *aggType, path, nil
 }
