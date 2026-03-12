@@ -30,10 +30,10 @@
 
 ### Task 1: Add failing test for group-by table output
 
-- [ ] add `mockMetricsScalarGroupByResponse` constant in `metrics_test.go` with response containing both `GroupScalarColumn` (type: "group", name: "service", values: [["web"], ["api"]]) and `DataScalarColumn` (type: "number", values: [42.5, 13.7])
-- [ ] add `TestMetricsScalarGroupByTableOutput` test that sends `--group-by service` flag and verifies table output contains: header "SERVICE", values "web", "api", "42.5", "13.7"
-- [ ] add `TestMetricsScalarMultiGroupByTableOutput` test with two group columns (service + env) and verify both group headers and values appear
-- [ ] run tests -- new tests must FAIL (red phase), existing tests must pass
+- [x] add `mockMetricsScalarGroupByResponse` constant in `metrics_test.go` with response containing both `GroupScalarColumn` (type: "group", name: "service", values: [["web"], ["api"]]) and `DataScalarColumn` (type: "number", values: [42.5, 13.7])
+- [x] add `TestMetricsScalarGroupByTableOutput` test that sends `--group-by service` flag and verifies table output contains: header "SERVICE", values "web", "api", "42.5", "13.7"
+- [x] add `TestMetricsScalarMultiGroupByTableOutput` test with two group columns (service + env) and verify both group headers and values appear
+- [x] run tests -- new tests must FAIL (red phase), existing tests must pass
 
 ### Task 2: Fix group-by table rendering in metrics scalar
 

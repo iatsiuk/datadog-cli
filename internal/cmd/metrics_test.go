@@ -514,6 +514,105 @@ func TestMetricsScalarJSONOutput(t *testing.T) {
 	}
 }
 
+const mockMetricsScalarGroupByResponse = `{
+	"data": {
+		"type": "scalar_response",
+		"attributes": {
+			"columns": [
+				{
+					"name": "service",
+					"type": "group",
+					"values": [["web"], ["api"]]
+				},
+				{
+					"name": "",
+					"type": "number",
+					"values": [42.5, 13.7]
+				}
+			]
+		}
+	}
+}`
+
+const mockMetricsScalarMultiGroupByResponse = `{
+	"data": {
+		"type": "scalar_response",
+		"attributes": {
+			"columns": [
+				{
+					"name": "service",
+					"type": "group",
+					"values": [["web"], ["api"]]
+				},
+				{
+					"name": "env",
+					"type": "group",
+					"values": [["prod"], ["prod"]]
+				},
+				{
+					"name": "",
+					"type": "number",
+					"values": [42.5, 13.7]
+				}
+			]
+		}
+	}
+}`
+
+func TestMetricsScalarGroupByTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsScalarGroupByResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsScalarCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "scalar",
+		"--query", "avg:system.cpu.user{*} by {service}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"SERVICE", "web", "api", "42.5", "13.7"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMetricsScalarMultiGroupByTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsScalarMultiGroupByResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsScalarCmd(newTestMetricsV2API(srv))
+	root.SetArgs([]string{"metrics", "scalar",
+		"--query", "avg:system.cpu.user{*} by {service,env}",
+		"--from", "1700000000",
+		"--to", "1700000060",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"SERVICE", "ENV", "web", "api", "prod", "42.5", "13.7"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func buildMetricsTimeseriesCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
 	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
