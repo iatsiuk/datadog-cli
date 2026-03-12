@@ -36,6 +36,55 @@ func NewEventsCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newEventsListCmd(defaultEventsAPI))
 	cmd.AddCommand(newEventsSearchCmd(defaultEventsAPI))
+	cmd.AddCommand(newEventsShowCmd(defaultEventsAPI))
+	return cmd
+}
+
+func newEventsShowCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show <event-id>",
+		Short: "Show event details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			eventID := args[0]
+
+			eapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := eapi.api.GetEvent(eapi.ctx, eventID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get event: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			event := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), event)
+			}
+
+			attrs := event.GetAttributes()
+			fields := []struct{ k, v string }{
+				{"ID", event.GetId()},
+				{"Date", attrs.GetTimestamp()},
+				{"Tags", strings.Join(attrs.GetTags(), ", ")},
+				{"Message", attrs.GetMessage()},
+			}
+			w := cmd.OutOrStdout()
+			for _, f := range fields {
+				fmt.Fprintf(w, "%-12s %s\n", f.k+":", f.v) //nolint:errcheck
+			}
+			return nil
+		},
+	}
 	return cmd
 }
 

@@ -326,6 +326,113 @@ func TestEventsSearchJSONOutput(t *testing.T) {
 	}
 }
 
+func buildEventsShowCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	events := &cobra.Command{Use: "events"}
+	events.AddCommand(newEventsShowCmd(mkAPI))
+	root.AddCommand(events)
+	return root, buf
+}
+
+const mockEventShowResponse = `{
+	"data": {
+		"id": "event-123",
+		"type": "event",
+		"attributes": {
+			"timestamp": "2024-01-15T10:30:00.000Z",
+			"tags": ["env:prod", "service:web"],
+			"message": "Deploy completed successfully"
+		}
+	}
+}`
+
+func TestEventsShowDetail(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/event-123") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildEventsShowCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "show", "event-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"event-123", "2024-01-15", "env:prod", "Deploy completed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestEventsShowJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildEventsShowCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "show", "event-123", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["id"] != "event-123" {
+		t.Errorf("id = %v, want event-123", result["id"])
+	}
+}
+
+func TestEventsShowNotFound(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"errors":["Not Found"]}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildEventsShowCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "show", "nonexistent-id"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for non-existent event")
+	}
+}
+
+func TestEventsShowIDRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildEventsShowCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "show"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when event ID is missing")
+	}
+}
+
 func TestEventsListDefaultFrom(t *testing.T) {
 	t.Parallel()
 
