@@ -217,6 +217,27 @@ Search output columns: `TIMESTAMP | TYPE | APPLICATION | VIEW | DURATION`
 Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
 Default `--from` is `now-15m`, default `--to` is `now`.
 
+### events
+
+Search, view, create, and tail Datadog events.
+
+```
+dd events list [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--sort <field>]
+dd events search --query <query> [--from <time>] [--to <time>] [--limit <n>]
+dd events show <event-id> [--json]
+dd events create --title <title> [--text <text>] [--tags <tag,...>] [--alert-type <type>]
+dd events tail [--query <query>] [--interval <duration>]
+```
+
+List/search output columns: `TIMESTAMP | TITLE | SOURCE | TAGS`
+
+Show output fields: ID, Date, Tags, Message
+
+`--alert-type` accepts: `ok`, `warning`, `error` (default: `ok`)
+
+Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
+Default `--from` is `now-24h`, default `--to` is `now`.
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
