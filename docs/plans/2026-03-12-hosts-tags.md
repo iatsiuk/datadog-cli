@@ -101,8 +101,8 @@
 - [x] run linter: `make build`
 
 ### Task 9: [Final] Update documentation
-- [ ] update CLAUDE.md API reference section with Hosts/Tags APIs
-- [ ] update README.md with hosts command examples
+- [x] update CLAUDE.md API reference section with Hosts/Tags APIs
+- [x] update README.md with hosts command examples
 
 ## Technical Details
 - **Host fields**: name, id, aliases, apps (list of integrations), sources, up (bool), last_reported_time, meta (platform, agent_version)
