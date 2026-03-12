@@ -17,6 +17,8 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
 
+var validDashboardTypes = []string{"custom_timeboard", "custom_screenboard", "integration_timeboard", "integration_screenboard", "host_timeboard"}
+
 func parseListID(s string) (int64, error) {
 	id, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
@@ -115,20 +117,23 @@ func newDashboardListsShowCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.C
 				return fmt.Errorf("get dashboard list: %w", err)
 			}
 
-			asJSON := false
-			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
-				asJSON = f.Value.String() == "true"
-			}
-			if asJSON {
-				return output.PrintJSON(cmd.OutOrStdout(), resp)
-			}
-
 			items, itemsResp, err := lapi.v2api.GetDashboardListItems(lapi.ctx, listID)
 			if itemsResp != nil {
 				_ = itemsResp.Body.Close()
 			}
 			if err != nil {
 				return fmt.Errorf("get dashboard list items: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), struct {
+					List  interface{} `json:"list"`
+					Items interface{} `json:"items"`
+				}{List: resp, Items: items})
 			}
 
 			idStr := strconv.FormatInt(resp.GetId(), 10)
@@ -526,11 +531,16 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 			var body datadogV1.Dashboard
 
 			if bodyJSON != "" {
+				for _, f := range []string{"title", "layout-type", "description", "tags", "widgets-json", "template-vars-json"} {
+					if cmd.Flags().Changed(f) {
+						return fmt.Errorf("--body cannot be combined with --%s", f)
+					}
+				}
 				if err := json.Unmarshal([]byte(bodyJSON), &body); err != nil {
 					return fmt.Errorf("parse --body: %w", err)
 				}
-				if body.LayoutType == "" {
-					return fmt.Errorf("--body must include layout_type")
+				if !body.LayoutType.IsValid() {
+					return fmt.Errorf("--body must include a valid layout_type (ordered or free)")
 				}
 			} else {
 				if title == "" {
@@ -724,9 +734,8 @@ func newDashboardListsAddItemsCmd(mkAPI func() (*dashboardListsAPI, error)) *cob
 			if dashType == "" {
 				return fmt.Errorf("--type is required")
 			}
-			validTypes := []string{"custom_timeboard", "custom_screenboard", "integration_timeboard", "integration_screenboard", "host_timeboard"}
 			validType := false
-			for _, vt := range validTypes {
+			for _, vt := range validDashboardTypes {
 				if dashType == vt {
 					validType = true
 					break
@@ -787,9 +796,8 @@ func newDashboardListsRemoveItemsCmd(mkAPI func() (*dashboardListsAPI, error)) *
 			if dashType == "" {
 				return fmt.Errorf("--type is required")
 			}
-			validTypes := []string{"custom_timeboard", "custom_screenboard", "integration_timeboard", "integration_screenboard", "host_timeboard"}
 			validType := false
-			for _, vt := range validTypes {
+			for _, vt := range validDashboardTypes {
 				if dashType == vt {
 					validType = true
 					break

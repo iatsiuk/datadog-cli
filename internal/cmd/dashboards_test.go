@@ -812,12 +812,18 @@ func TestDashboardListsShowJSONOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	var result map[string]interface{}
+	var result struct {
+		List  map[string]interface{} `json:"list"`
+		Items map[string]interface{} `json:"items"`
+	}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
 	}
-	if result["name"] != "My List" {
-		t.Errorf("got name %q, want %q", result["name"], "My List")
+	if result.List["name"] != "My List" {
+		t.Errorf("got name %q, want %q", result.List["name"], "My List")
+	}
+	if result.Items == nil {
+		t.Error("expected items in JSON output, got nil")
 	}
 }
 
