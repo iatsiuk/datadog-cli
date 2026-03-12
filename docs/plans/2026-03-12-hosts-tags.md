@@ -46,13 +46,13 @@
 - [x] run `make build` -- must pass
 
 ### Task 2: Host list with tests
-- [ ] write tests for `hosts list` -- table output (name, id, aliases, apps, sources, up, last_reported_time)
-- [ ] write tests for `hosts list` -- JSON output mode
-- [ ] write tests for `hosts list` -- with `--filter` flag for search
-- [ ] write tests for `hosts list` -- with `--from` flag (Unix timestamp, only active hosts since)
-- [ ] write tests for `hosts list` -- empty result
-- [ ] implement `newHostsListCmd` -- call `ListHosts` with optional filter/from/count/start
-- [ ] run `make build` -- must pass
+- [x] write tests for `hosts list` -- table output (name, id, aliases, apps, sources, up, last_reported_time)
+- [x] write tests for `hosts list` -- JSON output mode
+- [x] write tests for `hosts list` -- with `--filter` flag for search
+- [x] write tests for `hosts list` -- with `--from` flag (Unix timestamp, only active hosts since)
+- [x] write tests for `hosts list` -- empty result
+- [x] implement `newHostsListCmd` -- call `ListHosts` with optional filter/from/count/start
+- [x] run `make build` -- must pass
 
 ### Task 3: Host totals with tests
 - [ ] write tests for `hosts totals` -- display total/active host counts
