@@ -36,6 +36,7 @@ func NewMonitorsCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newMonitorsListCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsShowCmd(defaultMonitorsAPI))
+	cmd.AddCommand(newMonitorsSearchCmd(defaultMonitorsAPI))
 	return cmd
 }
 
@@ -105,6 +106,76 @@ func newMonitorsListCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "filter by monitor name")
 	cmd.Flags().StringVar(&tags, "tags", "", "filter by tags, e.g. env:prod,service:web")
 	cmd.Flags().IntVar(&pageSize, "page-size", 0, "number of monitors per page")
+	return cmd
+}
+
+func newMonitorsSearchCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
+	var (
+		query   string
+		page    int64
+		perPage int64
+	)
+
+	cmd := &cobra.Command{
+		Use:   "search",
+		Short: "Search monitors",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			opts := datadogV1.NewSearchMonitorsOptionalParameters()
+			if query != "" {
+				opts = opts.WithQuery(query)
+			}
+			if page > 0 {
+				opts = opts.WithPage(page)
+			}
+			if perPage > 0 {
+				opts = opts.WithPerPage(perPage)
+			}
+
+			resp, httpResp, err := mapi.api.SearchMonitors(mapi.ctx, *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("search monitors: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			monitors := resp.GetMonitors()
+
+			if asJSON {
+				if monitors == nil {
+					monitors = []datadogV1.MonitorSearchResult{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), monitors)
+			}
+
+			headers := []string{"ID", "NAME", "TYPE", "STATUS", "QUERY"}
+			rows := make([][]string, 0, len(monitors))
+			for _, m := range monitors {
+				rows = append(rows, []string{
+					fmt.Sprintf("%d", m.GetId()),
+					m.GetName(),
+					string(m.GetType()),
+					string(m.GetStatus()),
+					m.GetQuery(),
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "search query (e.g. type:metric status:Alert)")
+	cmd.Flags().Int64Var(&page, "page", 0, "page number (0-indexed)")
+	cmd.Flags().Int64Var(&perPage, "per-page", 0, "number of monitors per page")
 	return cmd
 }
 
