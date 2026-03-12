@@ -37,10 +37,10 @@
 
 ### Task 2: Fix group-by table rendering in metrics scalar
 
-- [ ] refactor table rendering in `metrics.go:304-322`: first pass collects group columns (`GroupScalarColumn`) and data columns (`DataScalarColumn`), second pass builds headers (group names uppercase + "VALUE") and rows by zipping group values with numeric values
-- [ ] handle edge case: no group columns (current behavior preserved -- NAME + VALUE)
-- [ ] handle edge case: multiple group columns
-- [ ] run tests -- all tests must pass (green phase), including new group-by tests from task 1
+- [x] refactor table rendering in `metrics.go:304-322`: first pass collects group columns (`GroupScalarColumn`) and data columns (`DataScalarColumn`), second pass builds headers (group names uppercase + "VALUE") and rows by zipping group values with numeric values
+- [x] handle edge case: no group columns (current behavior preserved -- NAME + VALUE)
+- [x] handle edge case: multiple group columns
+- [x] run tests -- all tests must pass (green phase), including new group-by tests from task 1
 
 ### Task 3: Verify acceptance criteria
 
