@@ -51,10 +51,10 @@ Fix 2 bugs in CLI code identified during E2E testing:
 - [x] run `make build` -- must pass
 
 ### Task 3: Verify acceptance criteria
-- [ ] verify both bugs are fixed
-- [ ] run full test suite: `go test -race ./...`
-- [ ] run linter: `make build`
-- [ ] update e2e-errors.md with resolution status
+- [x] verify both bugs are fixed
+- [x] run full test suite: `go test -race ./...`
+- [x] run linter: `make build`
+- [x] update e2e-errors.md with resolution status
 
 ## Technical Details
 
