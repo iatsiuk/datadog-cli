@@ -482,6 +482,66 @@ func TestDashboardsUpdateMissingID(t *testing.T) {
 	}
 }
 
+func buildDashboardsDeleteCmd(mkAPI func() (*dashboardsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	dashboards := &cobra.Command{Use: "dashboards"}
+	dashboards.AddCommand(newDashboardsDeleteCmd(mkAPI))
+	root.AddCommand(dashboards)
+	return root, buf
+}
+
+func TestDashboardsDeleteSuccess(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	var capturedMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedMethod = r.Method
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"deleted_dashboard_id":"abc-123"}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardsDeleteCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "delete", "--id", "abc-123", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if capturedMethod != http.MethodDelete {
+		t.Errorf("method = %q, want DELETE", capturedMethod)
+	}
+	if !strings.Contains(capturedPath, "abc-123") {
+		t.Errorf("request path %q missing dashboard id", capturedPath)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "abc-123") {
+		t.Errorf("output missing deleted id:\n%s", out)
+	}
+}
+
+func TestDashboardsDeleteMissingYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardsDeleteCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "delete", "--id", "abc-123"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --yes is missing")
+	}
+	if !strings.Contains(err.Error(), "--yes") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestDashboardsCreateMissingRequiredFlags(t *testing.T) {
 	t.Parallel()
 

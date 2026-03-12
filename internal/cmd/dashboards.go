@@ -39,6 +39,7 @@ func NewDashboardsCommand() *cobra.Command {
 	cmd.AddCommand(newDashboardsShowCmd(defaultDashboardsAPI))
 	cmd.AddCommand(newDashboardsCreateCmd(defaultDashboardsAPI))
 	cmd.AddCommand(newDashboardsUpdateCmd(defaultDashboardsAPI))
+	cmd.AddCommand(newDashboardsDeleteCmd(defaultDashboardsAPI))
 	return cmd
 }
 
@@ -264,6 +265,44 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 	cmd.Flags().StringVar(&description, "description", "", "dashboard description")
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags")
 	cmd.Flags().StringVar(&widgetsJSON, "widgets-json", "", "widgets as JSON array")
+	return cmd
+}
+
+func newDashboardsDeleteCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command {
+	var (
+		id  string
+		yes bool
+	)
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete a dashboard",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if !yes {
+				return fmt.Errorf("--yes is required to confirm deletion")
+			}
+
+			dapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := dapi.api.DeleteDashboard(dapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete dashboard: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "deleted dashboard: %s\n", resp.GetDeletedDashboardId()) //nolint:errcheck
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "dashboard ID (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
 }
 

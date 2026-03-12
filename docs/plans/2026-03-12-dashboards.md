@@ -73,10 +73,10 @@
 - [x] run `make build` -- must pass
 
 ### Task 6: Dashboard delete with tests
-- [ ] write tests for `dashboards delete --id <id> --yes` -- success response
-- [ ] write tests for `dashboards delete` -- missing `--yes` flag rejected
-- [ ] implement `newDashboardsDeleteCmd` -- require `--yes`, call `DeleteDashboard`
-- [ ] run `make build` -- must pass
+- [x] write tests for `dashboards delete --id <id> --yes` -- success response
+- [x] write tests for `dashboards delete` -- missing `--yes` flag rejected
+- [x] implement `newDashboardsDeleteCmd` -- require `--yes`, call `DeleteDashboard`
+- [x] run `make build` -- must pass
 
 ### Task 7: Dashboard Lists API wrapper and list with tests
 - [ ] write tests for `newTestDashboardListsAPI` helper
