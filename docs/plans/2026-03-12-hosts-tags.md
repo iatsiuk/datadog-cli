@@ -61,12 +61,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 4: Host mute/unmute with tests
-- [ ] write tests for `hosts mute --name <hostname>` -- success, optional `--end`, `--message`, `--override`
-- [ ] write tests for `hosts unmute --name <hostname>` -- success
-- [ ] write tests for `hosts mute` -- missing required `--name` flag
-- [ ] implement `newHostsMuteCmd` -- call `MuteHost` with optional end/message/override
-- [ ] implement `newHostsUnmuteCmd` -- call `UnmuteHost`
-- [ ] run `make build` -- must pass
+- [x] write tests for `hosts mute --name <hostname>` -- success, optional `--end`, `--message`, `--override`
+- [x] write tests for `hosts unmute --name <hostname>` -- success
+- [x] write tests for `hosts mute` -- missing required `--name` flag
+- [x] implement `newHostsMuteCmd` -- call `MuteHost` with optional end/message/override
+- [x] implement `newHostsUnmuteCmd` -- call `UnmuteHost`
+- [x] run `make build` -- must pass
 
 ### Task 5: Tags API wrapper and list all tags with tests
 - [ ] write tests for `newTestTagsAPI` helper

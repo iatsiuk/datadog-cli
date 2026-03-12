@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -337,5 +338,139 @@ func TestHostsListEmpty(t *testing.T) {
 	// only headers line expected
 	if !strings.Contains(out, "NAME") {
 		t.Errorf("expected headers in output, got: %s", out)
+	}
+}
+
+const mockHostMuteResponse = `{"action":"Muted","hostname":"web-01","message":"maintenance"}`
+const mockHostUnmuteResponse = `{"action":"Unmuted","hostname":"web-01"}`
+
+func buildHostsMuteCmd(mkAPI func() (*hostsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	hosts := &cobra.Command{Use: "hosts"}
+	hosts.AddCommand(newHostsMuteCmd(mkAPI))
+	hosts.AddCommand(newHostsUnmuteCmd(mkAPI))
+	root.AddCommand(hosts)
+	return root, buf
+}
+
+func TestHostsMuteSuccess(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHostMuteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildHostsMuteCmd(newTestHostsAPI(srv))
+	root.SetArgs([]string{"hosts", "mute", "--name", "web-01"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "web-01") {
+		t.Errorf("expected hostname in output, got: %s", out)
+	}
+}
+
+func TestHostsMuteWithOptions(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedReq  *http.Request
+		capturedBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		capturedBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHostMuteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildHostsMuteCmd(newTestHostsAPI(srv))
+	root.SetArgs([]string{"hosts", "mute", "--name", "web-01", "--end", "1700000000", "--message", "maintenance", "--override"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	body := capturedBody
+	mu.Unlock()
+
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal(body, &settings); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	if got := settings["end"]; got != float64(1700000000) {
+		t.Errorf("end = %v, want 1700000000", got)
+	}
+	if got := settings["message"]; got != "maintenance" {
+		t.Errorf("message = %v, want maintenance", got)
+	}
+	if got := settings["override"]; got != true {
+		t.Errorf("override = %v, want true", got)
+	}
+}
+
+func TestHostsMuteMissingName(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHostMuteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildHostsMuteCmd(newTestHostsAPI(srv))
+	root.SetArgs([]string{"hosts", "mute"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --name is missing, got nil")
+	}
+}
+
+func TestHostsUnmuteSuccess(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHostUnmuteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildHostsMuteCmd(newTestHostsAPI(srv))
+	root.SetArgs([]string{"hosts", "unmute", "--name", "web-01"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "web-01") {
+		t.Errorf("expected hostname in output, got: %s", out)
+	}
+}
+
+func TestHostsUnmuteMissingName(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHostUnmuteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildHostsMuteCmd(newTestHostsAPI(srv))
+	root.SetArgs([]string{"hosts", "unmute"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --name is missing, got nil")
 	}
 }

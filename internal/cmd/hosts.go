@@ -57,6 +57,8 @@ func NewHostsCommand() *cobra.Command {
 
 	cmd.AddCommand(newHostsListCmd(defaultHostsAPI))
 	cmd.AddCommand(newHostsTotalsCmd(defaultHostsAPI))
+	cmd.AddCommand(newHostsMuteCmd(defaultHostsAPI))
+	cmd.AddCommand(newHostsUnmuteCmd(defaultHostsAPI))
 	cmd.AddCommand(tagsCmd)
 	return cmd
 }
@@ -98,6 +100,105 @@ func newHostsTotalsCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
 	}
+}
+
+func newHostsMuteCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
+	var (
+		name     string
+		end      int64
+		message  string
+		override bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "mute",
+		Short: "Mute a host",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			hapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			settings := datadogV1.NewHostMuteSettings()
+			if end != 0 {
+				settings.SetEnd(end)
+			}
+			if message != "" {
+				settings.SetMessage(message)
+			}
+			if override {
+				settings.SetOverride(true)
+			}
+
+			resp, httpResp, err := hapi.api.MuteHost(hapi.ctx, name, *settings)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("mute host: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"HOSTNAME", "ACTION", "MESSAGE"}
+			rows := [][]string{{resp.GetHostname(), resp.GetAction(), resp.GetMessage()}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "hostname to mute (required)")
+	cmd.Flags().Int64Var(&end, "end", 0, "Unix timestamp when mute ends")
+	cmd.Flags().StringVar(&message, "message", "", "message associated with the mute")
+	cmd.Flags().BoolVar(&override, "override", false, "override existing mute settings")
+	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func newHostsUnmuteCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
+	var name string
+
+	cmd := &cobra.Command{
+		Use:   "unmute",
+		Short: "Unmute a host",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			hapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := hapi.api.UnmuteHost(hapi.ctx, name)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("unmute host: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"HOSTNAME", "ACTION"}
+			rows := [][]string{{resp.GetHostname(), resp.GetAction()}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "hostname to unmute (required)")
+	_ = cmd.MarkFlagRequired("name")
+	return cmd
 }
 
 func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
