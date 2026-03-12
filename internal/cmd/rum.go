@@ -554,9 +554,7 @@ func newRUMAppCreateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
 			}
 
 			attrs := datadogV2.NewRUMApplicationCreateAttributes(name)
-			if appType != "" {
-				attrs.SetType(appType)
-			}
+			attrs.SetType(appType)
 			data := datadogV2.NewRUMApplicationCreate(*attrs, datadogV2.RUMAPPLICATIONCREATETYPE_RUM_APPLICATION_CREATE)
 			req := datadogV2.NewRUMApplicationCreateRequest(*data)
 

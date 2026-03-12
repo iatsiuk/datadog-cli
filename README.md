@@ -174,7 +174,7 @@ dd rum search [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--s
 dd rum aggregate --compute <fn>[:<metric>] [--query <query>] [--from <time>] [--to <time>] [--group-by <facets>]
 dd rum app list
 dd rum app show <id>
-dd rum app create --name <name> --type <browser|ios|android|react-native|flutter|roku>
+dd rum app create --name <name> --type <browser|ios|android|react-native|flutter|roku|electron|unity|kotlin-multiplatform>
 dd rum app update <id> [--name <name>] [--type <type>]
 dd rum app delete <id> --yes
 dd rum metric list

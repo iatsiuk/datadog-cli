@@ -570,55 +570,41 @@ func TestRUMAppUpdateFlags(t *testing.T) {
 	}
 }
 
-func TestRUMAppCreateInvalidType(t *testing.T) {
+func TestRUMAppCreateTypeValidation(t *testing.T) {
 	t.Parallel()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
-	}))
-	defer srv.Close()
-
-	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
-	root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", "invalid"})
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("expected error for invalid type")
+	cases := []struct {
+		appType string
+		wantErr bool
+	}{
+		{"invalid", true},
+		{"browser", false},
+		{"ios", false},
 	}
-	if !strings.Contains(err.Error(), "invalid --type") {
-		t.Errorf("error %q does not mention invalid --type", err.Error())
-	}
-}
 
-func TestRUMAppCreateValidTypeBrowser(t *testing.T) {
-	t.Parallel()
+	for _, tc := range cases {
+		t.Run(tc.appType, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
+			}))
+			defer srv.Close()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
-	}))
-	defer srv.Close()
-
-	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
-	root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", "browser"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-}
-
-func TestRUMAppCreateValidTypeIOS(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
-	}))
-	defer srv.Close()
-
-	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
-	root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", "ios"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute: %v", err)
+			root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+			root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", tc.appType})
+			err := root.Execute()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error for invalid type")
+				}
+				if !strings.Contains(err.Error(), "invalid --type") {
+					t.Errorf("error %q does not mention invalid --type", err.Error())
+				}
+			} else if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+		})
 	}
 }
 
@@ -1365,9 +1351,14 @@ func TestRUMPlaylistCreateRequiresName(t *testing.T) {
 func TestRUMPlaylistUpdate(t *testing.T) {
 	t.Parallel()
 
-	callCount := 0
+	var (
+		mu        sync.Mutex
+		callCount int
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		callCount++
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockPlaylistResponse) //nolint:errcheck
 	}))
@@ -1380,8 +1371,11 @@ func TestRUMPlaylistUpdate(t *testing.T) {
 	}
 
 	// should make GET then PUT (2 calls)
-	if callCount < 2 {
-		t.Errorf("expected at least 2 API calls, got %d", callCount)
+	mu.Lock()
+	got := callCount
+	mu.Unlock()
+	if got < 2 {
+		t.Errorf("expected at least 2 API calls, got %d", got)
 	}
 	_ = buf.String()
 }
