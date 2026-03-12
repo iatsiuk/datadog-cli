@@ -44,12 +44,12 @@
 
 ### Task 3: Verify acceptance criteria
 
-- [ ] verify `TestMetricsScalarTableOutput` still passes (no group-by -- backward compatible)
-- [ ] verify `TestMetricsScalarGroupByTableOutput` passes (single group-by)
-- [ ] verify `TestMetricsScalarMultiGroupByTableOutput` passes (multiple group-by)
-- [ ] verify `TestMetricsScalarJSONOutput` still passes (JSON unaffected)
-- [ ] run full test suite (`go test -race ./...`)
-- [ ] run linter via `make build`
+- [x] verify `TestMetricsScalarTableOutput` still passes (no group-by -- backward compatible)
+- [x] verify `TestMetricsScalarGroupByTableOutput` passes (single group-by)
+- [x] verify `TestMetricsScalarMultiGroupByTableOutput` passes (multiple group-by)
+- [x] verify `TestMetricsScalarJSONOutput` still passes (JSON unaffected)
+- [x] run full test suite (`go test -race ./...`)
+- [x] run linter via `make build`
 
 ## Technical Details
 
