@@ -595,6 +595,10 @@ func newRUMAppUpdateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
 
+			if !cmd.Flags().Changed("name") && !cmd.Flags().Changed("type") {
+				return fmt.Errorf("at least one of --name or --type must be specified")
+			}
+
 			rapi, err := mkAPI()
 			if err != nil {
 				return err
@@ -902,6 +906,10 @@ func newRUMMetricUpdateCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command 
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
+
+			if !cmd.Flags().Changed("filter") && !cmd.Flags().Changed("group-by") {
+				return fmt.Errorf("at least one of --filter or --group-by must be specified")
+			}
 
 			updateAttrs := datadogV2.NewRumMetricUpdateAttributes()
 			if filter != "" {
