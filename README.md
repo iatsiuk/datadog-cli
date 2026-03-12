@@ -233,7 +233,7 @@ List/search output columns: `TIMESTAMP | TITLE | SOURCE | TAGS`
 
 Show output fields: ID, Date, Tags, Message
 
-`--alert-type` accepts: `info`, `warning`, `error`, `success` (default: `info`)
+`--alert-type` accepts: `ok`, `warning`, `error` (default: `ok`)
 
 Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
 Default `--from` is `now-24h`, default `--to` is `now`.

@@ -490,7 +490,7 @@ func TestEventsCreateFlags(t *testing.T) {
 		"--title", "Deploy v2.1",
 		"--text", "Released to prod",
 		"--tags", "env:prod,service:web",
-		"--alert-type", "info",
+		"--alert-type", "ok",
 	})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -512,8 +512,14 @@ func TestEventsCreateFlags(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("invalid request body JSON: %v", err)
 	}
-	data := payload["data"].(map[string]interface{})
-	attrs := data["attributes"].(map[string]interface{})
+	data, ok := payload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("payload[\"data\"] is not a map: %v", payload["data"])
+	}
+	attrs, ok := data["attributes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data[\"attributes\"] is not a map: %v", data["attributes"])
+	}
 	if attrs["title"] != "Deploy v2.1" {
 		t.Errorf("title = %v, want Deploy v2.1", attrs["title"])
 	}
@@ -552,7 +558,7 @@ func TestEventsCreateAlertTypeValidation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	for _, validType := range []string{"info", "warning", "error"} {
+	for _, validType := range []string{"ok", "warning", "error"} {
 		root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
 		root.SetArgs([]string{"events", "create", "--title", "test", "--alert-type", validType})
 		if err := root.Execute(); err != nil {
@@ -560,7 +566,7 @@ func TestEventsCreateAlertTypeValidation(t *testing.T) {
 		}
 	}
 
-	for _, invalidType := range []string{"invalid", "success"} {
+	for _, invalidType := range []string{"invalid", "info", "success"} {
 		root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
 		root.SetArgs([]string{"events", "create", "--title", "test", "--alert-type", invalidType})
 		if err := root.Execute(); err == nil {
@@ -599,8 +605,14 @@ func TestEventsCreateTagsTrimmed(t *testing.T) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		t.Fatalf("invalid request body JSON: %v", err)
 	}
-	data := payload["data"].(map[string]interface{})
-	attrs := data["attributes"].(map[string]interface{})
+	data, ok := payload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("payload[\"data\"] is not a map: %v", payload["data"])
+	}
+	attrs, ok := data["attributes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data[\"attributes\"] is not a map: %v", data["attributes"])
+	}
 	tags, ok := attrs["tags"].([]interface{})
 	if !ok || len(tags) != 2 {
 		t.Fatalf("tags = %v, want 2 elements", attrs["tags"])
