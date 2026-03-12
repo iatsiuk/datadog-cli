@@ -315,3 +315,95 @@ func TestDowntimeCreate_MonitorTags(t *testing.T) {
 		}
 	}
 }
+
+const mockDowntimeUpdateResponse = `{
+	"data": {
+		"id": "abc-111",
+		"type": "downtime",
+		"attributes": {
+			"scope": "env:updated",
+			"status": "active",
+			"monitor_identifier": {"monitor_id": 12345},
+			"message": "updated message"
+		}
+	}
+}`
+
+func TestDowntimeUpdate_ChangedFields(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDowntimeUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDowntimeListCmd(newTestDowntimesAPI(srv))
+	root.SetArgs([]string{
+		"monitors", "downtime", "update",
+		"--id", "abc-111",
+		"--scope", "env:updated",
+		"--message", "updated message",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	body := string(capturedBody)
+	for _, want := range []string{"env:updated", "updated message", "abc-111"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("request body missing %q\nbody: %s", want, body)
+		}
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "abc-111") {
+		t.Errorf("output missing updated ID\nfull output:\n%s", out)
+	}
+}
+
+func TestDowntimeUpdate_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDowntimeListCmd(newTestDowntimesAPI(srv))
+	root.SetArgs([]string{"monitors", "downtime", "update"})
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--id") {
+		t.Fatalf("expected --id error, got: %v", err)
+	}
+}
+
+func TestDowntimeCancel_Success(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildDowntimeListCmd(newTestDowntimesAPI(srv))
+	root.SetArgs([]string{"monitors", "downtime", "cancel", "--id", "abc-111", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "abc-111") {
+		t.Errorf("output missing cancelled ID\nfull output:\n%s", out)
+	}
+}
+
+func TestDowntimeCancel_MissingYes(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDowntimeListCmd(newTestDowntimesAPI(srv))
+	root.SetArgs([]string{"monitors", "downtime", "cancel", "--id", "abc-111"})
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("expected --yes error, got: %v", err)
+	}
+}

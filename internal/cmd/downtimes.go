@@ -34,6 +34,10 @@ func defaultDowntimesAPI() (*downtimesAPI, error) {
 	return &downtimesAPI{api: datadogV2.NewDowntimesApi(c), ctx: ctx}, nil
 }
 
+var (
+	errDowntimeYesRequired = errors.New("--yes is required to cancel a downtime")
+)
+
 func newDowntimeCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "downtime",
@@ -42,6 +46,8 @@ func newDowntimeCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
 	cmd.AddCommand(newDowntimeListCmd(mkAPI))
 	cmd.AddCommand(newDowntimeShowCmd(mkAPI))
 	cmd.AddCommand(newDowntimeCreateCmd(mkAPI))
+	cmd.AddCommand(newDowntimeUpdateCmd(mkAPI))
+	cmd.AddCommand(newDowntimeCancelCmd(mkAPI))
 	return cmd
 }
 
@@ -294,5 +300,128 @@ func newDowntimeCreateCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&message, "message", "", "notification message")
 	cmd.Flags().StringVar(&startStr, "start", "", "start time (RFC3339, e.g. 2026-03-13T10:00:00Z)")
 	cmd.Flags().StringVar(&endStr, "end", "", "end time (RFC3339)")
+	return cmd
+}
+
+func newDowntimeUpdateCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
+	var (
+		downtimeID string
+		scope      string
+		message    string
+		startStr   string
+		endStr     string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update a downtime",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if downtimeID == "" {
+				return errDowntimeIDRequired
+			}
+
+			dapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewDowntimeUpdateRequestAttributes()
+
+			if cmd.Flags().Changed("scope") {
+				attrs.SetScope(scope)
+			}
+			if cmd.Flags().Changed("message") {
+				attrs.Message.Set(&message)
+			}
+			if cmd.Flags().Changed("start") || cmd.Flags().Changed("end") {
+				sched := &datadogV2.DowntimeScheduleOneTimeCreateUpdateRequest{}
+				if cmd.Flags().Changed("start") {
+					t, err := time.Parse(time.RFC3339, startStr)
+					if err != nil {
+						return fmt.Errorf("parse --start: %w", err)
+					}
+					sched.Start.Set(&t)
+				}
+				if cmd.Flags().Changed("end") {
+					t, err := time.Parse(time.RFC3339, endStr)
+					if err != nil {
+						return fmt.Errorf("parse --end: %w", err)
+					}
+					sched.End.Set(&t)
+				}
+				schedReq := datadogV2.DowntimeScheduleOneTimeCreateUpdateRequestAsDowntimeScheduleUpdateRequest(sched)
+				attrs.Schedule = &schedReq
+			}
+
+			data := datadogV2.NewDowntimeUpdateRequestData(*attrs, downtimeID, datadogV2.DOWNTIMERESOURCETYPE_DOWNTIME)
+			body := datadogV2.NewDowntimeUpdateRequest(*data)
+
+			resp, httpResp, err := dapi.api.UpdateDowntime(dapi.ctx, downtimeID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update downtime: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			d := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), d)
+			}
+
+			return printDowntimeTable(cmd, d)
+		},
+	}
+
+	cmd.Flags().StringVar(&downtimeID, "id", "", "downtime ID")
+	cmd.Flags().StringVar(&scope, "scope", "", "new scope for the downtime")
+	cmd.Flags().StringVar(&message, "message", "", "notification message")
+	cmd.Flags().StringVar(&startStr, "start", "", "start time (RFC3339)")
+	cmd.Flags().StringVar(&endStr, "end", "", "end time (RFC3339)")
+	return cmd
+}
+
+func newDowntimeCancelCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
+	var (
+		downtimeID string
+		yes        bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "cancel",
+		Short: "Cancel a downtime",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if downtimeID == "" {
+				return errDowntimeIDRequired
+			}
+			if !yes {
+				return errDowntimeYesRequired
+			}
+
+			dapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := dapi.api.CancelDowntime(dapi.ctx, downtimeID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("cancel downtime: %w", err)
+			}
+
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "downtime %s cancelled\n", downtimeID)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&downtimeID, "id", "", "downtime ID")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm cancellation")
 	return cmd
 }
