@@ -19,6 +19,15 @@ import (
 
 var validDashboardTypes = []string{"custom_timeboard", "custom_screenboard", "integration_timeboard", "integration_screenboard", "host_timeboard"}
 
+func validateDashboardType(t string) error {
+	for _, vt := range validDashboardTypes {
+		if t == vt {
+			return nil
+		}
+	}
+	return fmt.Errorf("--type must be one of: custom_timeboard, custom_screenboard, integration_timeboard, integration_screenboard, host_timeboard")
+}
+
 func parseListID(s string) (int64, error) {
 	id, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
@@ -734,15 +743,8 @@ func newDashboardListsAddItemsCmd(mkAPI func() (*dashboardListsAPI, error)) *cob
 			if dashType == "" {
 				return fmt.Errorf("--type is required")
 			}
-			validType := false
-			for _, vt := range validDashboardTypes {
-				if dashType == vt {
-					validType = true
-					break
-				}
-			}
-			if !validType {
-				return fmt.Errorf("--type must be one of: custom_timeboard, custom_screenboard, integration_timeboard, integration_screenboard, host_timeboard")
+			if err := validateDashboardType(dashType); err != nil {
+				return err
 			}
 			listID, err := parseListID(id)
 			if err != nil {
@@ -796,15 +798,8 @@ func newDashboardListsRemoveItemsCmd(mkAPI func() (*dashboardListsAPI, error)) *
 			if dashType == "" {
 				return fmt.Errorf("--type is required")
 			}
-			validType := false
-			for _, vt := range validDashboardTypes {
-				if dashType == vt {
-					validType = true
-					break
-				}
-			}
-			if !validType {
-				return fmt.Errorf("--type must be one of: custom_timeboard, custom_screenboard, integration_timeboard, integration_screenboard, host_timeboard")
+			if err := validateDashboardType(dashType); err != nil {
+				return err
 			}
 			listID, err := parseListID(id)
 			if err != nil {
