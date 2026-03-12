@@ -605,7 +605,7 @@ func newRUMAppUpdateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
 			}
 
 			updateAttrs := datadogV2.NewRUMApplicationUpdateAttributes()
-			if name != "" {
+			if cmd.Flags().Changed("name") {
 				updateAttrs.SetName(name)
 			}
 			if appType != "" {
@@ -916,7 +916,7 @@ func newRUMMetricUpdateCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command 
 				f := datadogV2.NewRumMetricFilter(filter)
 				updateAttrs.SetFilter(*f)
 			}
-			if groupBy != "" {
+			if cmd.Flags().Changed("group-by") {
 				facets := strings.Split(groupBy, ",")
 				groups := make([]datadogV2.RumMetricGroupBy, 0, len(facets))
 				for _, facet := range facets {
@@ -1222,7 +1222,7 @@ func newRUMRetentionFilterUpdateCmd(mkAPI func() (*rumRetentionFiltersAPI, error
 			rfID := args[0]
 
 			attrs := datadogV2.NewRumRetentionFilterUpdateAttributes()
-			if name != "" {
+			if cmd.Flags().Changed("name") {
 				attrs.SetName(name)
 			}
 			if eventType != "" {
@@ -1238,7 +1238,7 @@ func newRUMRetentionFilterUpdateCmd(mkAPI func() (*rumRetentionFiltersAPI, error
 				}
 				attrs.SetSampleRate(sampleRate)
 			}
-			if query != "" {
+			if cmd.Flags().Changed("query") {
 				attrs.SetQuery(query)
 			}
 			if cmd.Flags().Changed("enabled") {
