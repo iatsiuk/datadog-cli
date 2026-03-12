@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -37,6 +38,7 @@ func NewMonitorsCommand() *cobra.Command {
 	cmd.AddCommand(newMonitorsListCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsShowCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsSearchCmd(defaultMonitorsAPI))
+	cmd.AddCommand(newMonitorsCreateCmd(defaultMonitorsAPI))
 	return cmd
 }
 
@@ -179,7 +181,12 @@ func newMonitorsSearchCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 	return cmd
 }
 
-var errMonitorIDRequired = errors.New("--id is required")
+var (
+	errMonitorIDRequired    = errors.New("--id is required")
+	errMonitorNameRequired  = errors.New("--name is required")
+	errMonitorTypeRequired  = errors.New("--type is required")
+	errMonitorQueryRequired = errors.New("--query is required")
+)
 
 func newMonitorsShowCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 	var monitorID int64
@@ -235,5 +242,100 @@ func newMonitorsShowCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().Int64Var(&monitorID, "id", 0, "monitor ID")
+	return cmd
+}
+
+func newMonitorsCreateCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
+	var (
+		name       string
+		monType    string
+		query      string
+		message    string
+		tagsStr    string
+		priority   int64
+		thresholds string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a monitor",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if name == "" {
+				return errMonitorNameRequired
+			}
+			if monType == "" {
+				return errMonitorTypeRequired
+			}
+			if query == "" {
+				return errMonitorQueryRequired
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			body := datadogV1.NewMonitor(query, datadogV1.MonitorType(monType))
+			body.SetName(name)
+
+			if message != "" {
+				body.SetMessage(message)
+			}
+			if tagsStr != "" {
+				rawTags := strings.Split(tagsStr, ",")
+				tags := make([]string, len(rawTags))
+				for i, t := range rawTags {
+					tags[i] = strings.TrimSpace(t)
+				}
+				body.SetTags(tags)
+			}
+			if priority > 0 {
+				body.SetPriority(priority)
+			}
+			if thresholds != "" {
+				var thr datadogV1.MonitorThresholds
+				if err := json.Unmarshal([]byte(thresholds), &thr); err != nil {
+					return fmt.Errorf("invalid --thresholds JSON: %w", err)
+				}
+				opts := body.GetOptions()
+				opts.SetThresholds(thr)
+				body.SetOptions(opts)
+			}
+
+			m, httpResp, err := mapi.api.CreateMonitor(mapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create monitor: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), m)
+			}
+
+			rows := [][]string{
+				{"ID", fmt.Sprintf("%d", m.GetId())},
+				{"NAME", m.GetName()},
+				{"TYPE", string(m.GetType())},
+				{"STATUS", string(m.GetOverallState())},
+				{"QUERY", m.GetQuery()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "monitor name (required)")
+	cmd.Flags().StringVar(&monType, "type", "", "monitor type, e.g. metric alert (required)")
+	cmd.Flags().StringVar(&query, "query", "", "monitor query (required)")
+	cmd.Flags().StringVar(&message, "message", "", "notification message")
+	cmd.Flags().StringVar(&tagsStr, "tags", "", "comma-separated tags, e.g. env:prod,service:web")
+	cmd.Flags().Int64Var(&priority, "priority", 0, "priority 1 (high) to 5 (low)")
+	cmd.Flags().StringVar(&thresholds, "thresholds", "", "thresholds as JSON, e.g. {\"critical\":90,\"warning\":80}")
 	return cmd
 }

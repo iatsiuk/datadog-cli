@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -318,6 +319,128 @@ func TestMonitorsSearch_JSONOutput(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
 		}
+	}
+}
+
+func buildMonitorsCreateCmd(mkAPI func() (*monitorsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	monitors := &cobra.Command{Use: "monitors"}
+	monitors.AddCommand(newMonitorsCreateCmd(mkAPI))
+	root.AddCommand(monitors)
+	return root, buf
+}
+
+const mockMonitorCreateResponse = `{
+	"id": 99999,
+	"name": "My Monitor",
+	"type": "metric alert",
+	"overall_state": "No Data",
+	"query": "avg(last_5m):avg:system.cpu.user{*} > 90",
+	"message": "Alert message",
+	"tags": ["env:prod"],
+	"priority": 2
+}`
+
+func TestMonitorsCreate_RequestBody(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMonitorCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMonitorsCreateCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{
+		"monitors", "create",
+		"--name", "My Monitor",
+		"--type", "metric alert",
+		"--query", "avg(last_5m):avg:system.cpu.user{*} > 90",
+		"--message", "Alert message",
+		"--tags", "env:prod",
+		"--priority", "2",
+		"--thresholds", `{"critical":90,"warning":80}`,
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	body := string(capturedBody)
+	for _, want := range []string{"My Monitor", "metric alert", "avg(last_5m)", "Alert message", "env:prod"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("request body missing %q\nbody: %s", want, body)
+		}
+	}
+}
+
+func TestMonitorsCreate_RequiredFlags(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "missing name",
+			args: []string{"monitors", "create", "--type", "metric alert", "--query", "avg(last_5m):avg:system.cpu.user{*} > 90"},
+		},
+		{
+			name: "missing type",
+			args: []string{"monitors", "create", "--name", "My Monitor", "--query", "avg(last_5m):avg:system.cpu.user{*} > 90"},
+		},
+		{
+			name: "missing query",
+			args: []string{"monitors", "create", "--name", "My Monitor", "--type", "metric alert"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildMonitorsCreateCmd(newTestMonitorsAPI(srv))
+			root.SetArgs(tc.args)
+			if err := root.Execute(); err == nil {
+				t.Fatalf("expected error for %s", tc.name)
+			}
+		})
+	}
+}
+
+func TestMonitorsCreate_OptionalFlags(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMonitorCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMonitorsCreateCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{
+		"monitors", "create",
+		"--name", "My Monitor",
+		"--type", "metric alert",
+		"--query", "avg(last_5m):avg:system.cpu.user{*} > 90",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// optional fields absent -- body should still be valid
+	if len(capturedBody) == 0 {
+		t.Error("expected non-empty request body")
 	}
 }
 
