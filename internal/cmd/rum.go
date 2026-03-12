@@ -1525,7 +1525,7 @@ func newRUMPlaylistUpdateCmd(mkAPI func() (*rumPlaylistsAPI, error)) *cobra.Comm
 				updatedName = name
 			}
 			attrs := datadogV2.NewPlaylistDataAttributes(updatedName)
-			if description != "" {
+			if cmd.Flags().Changed("description") {
 				attrs.SetDescription(description)
 			} else if currentAttrs.Description != nil {
 				attrs.SetDescription(*currentAttrs.Description)
@@ -2035,8 +2035,10 @@ func newRUMSessionSegmentsCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Comm
 				return fmt.Errorf("get segments: %w", err)
 			}
 
-			_, err = io.Copy(cmd.OutOrStdout(), httpResp.Body)
-			return err
+			if _, err = io.Copy(cmd.OutOrStdout(), httpResp.Body); err != nil {
+				return fmt.Errorf("stream segments: %w", err)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&viewID, "view", "", "view ID (required)")
