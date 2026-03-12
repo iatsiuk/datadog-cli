@@ -1334,6 +1334,61 @@ func TestRUMPlaylistUpdate(t *testing.T) {
 	_ = buf.String()
 }
 
+func TestRUMPlaylistUpdateSendsID(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedPUT []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPut {
+			b, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			capturedPUT = b
+			mu.Unlock()
+		}
+		fmt.Fprint(w, mockPlaylistResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "update", "42", "--name", "Updated"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := string(capturedPUT)
+	mu.Unlock()
+	if body == "" {
+		t.Fatal("no PUT request captured")
+	}
+	// verify data.id is present in the PUT body
+	if !strings.Contains(body, `"id"`) {
+		t.Errorf("PUT body missing 'id' field: %s", body)
+	}
+	if !strings.Contains(body, `"42"`) {
+		t.Errorf("PUT body missing playlist id '42': %s", body)
+	}
+}
+
+func TestRUMPlaylistUpdateNoFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "update", "42"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when no --name or --description provided")
+	}
+}
+
 func TestRUMPlaylistDelete(t *testing.T) {
 	t.Parallel()
 

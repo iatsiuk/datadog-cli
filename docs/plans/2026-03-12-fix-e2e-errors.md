@@ -33,11 +33,11 @@ Fix 2 bugs in CLI code identified during E2E testing:
 ### Task 1: Fix playlist update -- set ID in request body
 **Root cause**: `newRUMPlaylistUpdateCmd` creates `PlaylistData` without setting `Id`, causing 409 Conflict from the API.
 
-- [ ] write test: playlist update sends ID in PUT request body (capture and verify JSON body contains `data.id`)
-- [ ] write test: playlist update without changed flags returns error
-- [ ] implement fix in `newRUMPlaylistUpdateCmd`: set `data.SetId(pid)` before sending update
-- [ ] run `go test -race ./internal/cmd/ -run TestRUMPlaylist` -- must pass
-- [ ] run `make build` -- must pass
+- [x] write test: playlist update sends ID in PUT request body (capture and verify JSON body contains `data.id`)
+- [x] write test: playlist update without changed flags returns error
+- [x] implement fix in `newRUMPlaylistUpdateCmd`: set `data.SetId(pid)` before sending update
+- [x] run `go test -race ./internal/cmd/ -run TestRUMPlaylist` -- must pass
+- [x] run `make build` -- must pass
 
 ### Task 2: Add client-side validation for rum app --type flag
 **Root cause**: `newRUMAppCreateCmd` passes any `--type` value to API without validation; API silently defaults to "browser".

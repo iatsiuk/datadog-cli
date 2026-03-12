@@ -1555,6 +1555,7 @@ func newRUMPlaylistUpdateCmd(mkAPI func() (*rumPlaylistsAPI, error)) *cobra.Comm
 			}
 
 			data := datadogV2.NewPlaylistData(datadogV2.PLAYLISTDATATYPE_RUM_REPLAY_PLAYLIST)
+			data.SetId(strconv.Itoa(int(pid)))
 			data.SetAttributes(*attrs)
 			body := datadogV2.NewPlaylist(*data)
 
