@@ -228,7 +228,7 @@ func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
 			if filter != "" {
 				opts = opts.WithFilter(filter)
 			}
-			if from != 0 {
+			if cmd.Flags().Changed("from") {
 				opts = opts.WithFrom(from)
 			}
 			if count != 0 {
@@ -251,13 +251,11 @@ func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
 				asJSON = f.Value.String() == "true"
 			}
 
-			hosts := resp.GetHostList()
 			if asJSON {
-				if hosts == nil {
-					hosts = []datadogV1.Host{}
-				}
-				return output.PrintJSON(cmd.OutOrStdout(), hosts)
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
 			}
+
+			hosts := resp.GetHostList()
 
 			headers := []string{"NAME", "ID", "ALIASES", "APPS", "SOURCES", "UP", "LAST_REPORTED"}
 			rows := make([][]string, len(hosts))

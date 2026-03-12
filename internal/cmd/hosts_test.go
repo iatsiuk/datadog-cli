@@ -142,12 +142,22 @@ func TestHostsListJSON(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	var result []interface{}
+	var result map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON output: %v\noutput: %s", err, buf.String())
 	}
-	if len(result) != 1 {
-		t.Errorf("expected 1 host, got %d", len(result))
+	hostList, ok := result["host_list"].([]interface{})
+	if !ok {
+		t.Fatalf("expected host_list array in JSON output, got: %s", buf.String())
+	}
+	if len(hostList) != 1 {
+		t.Errorf("expected 1 host, got %d", len(hostList))
+	}
+	if _, ok := result["total_matching"]; !ok {
+		t.Errorf("expected total_matching in JSON output, got: %s", buf.String())
+	}
+	if _, ok := result["total_returned"]; !ok {
+		t.Errorf("expected total_returned in JSON output, got: %s", buf.String())
 	}
 }
 
