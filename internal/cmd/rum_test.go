@@ -1878,3 +1878,380 @@ func TestRUMSessionHistoryJSON(t *testing.T) {
 		t.Errorf("got %d entries, want 1", len(result))
 	}
 }
+
+// --- audience tests ---
+
+const mockConnectionsListResponse = `{
+	"data": {
+		"type": "mapping_data",
+		"attributes": {
+			"connections": [
+				{
+					"id": "conn-1",
+					"type": "crm",
+					"join": {"attribute": "user.email"},
+					"created_at": "2024-01-15T10:00:00Z"
+				}
+			]
+		}
+	}
+}`
+
+const mockMappingResponse = `{
+	"data": {
+		"type": "mapping_data",
+		"attributes": {
+			"attributes": [
+				{
+					"attribute": "user.email",
+					"display_name": "Email",
+					"type": "string",
+					"is_custom": false
+				}
+			]
+		}
+	}
+}`
+
+const mockQueryResponse = `{
+	"data": {
+		"type": "query_response",
+		"attributes": {
+			"total": 2,
+			"hits": [
+				{"id": "u1", "email": "a@b.com"},
+				{"id": "u2", "email": "c@d.com"}
+			]
+		}
+	}
+}`
+
+func newTestRUMAudienceAPI(srv *httptest.Server) func() (*rumAudienceAPI, error) {
+	return func() (*rumAudienceAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		for _, op := range []string{
+			"v2.ListConnections",
+			"v2.CreateConnection",
+			"v2.UpdateConnection",
+			"v2.DeleteConnection",
+			"v2.GetMapping",
+			"v2.QueryUsers",
+			"v2.QueryAccounts",
+		} {
+			cfg.SetUnstableOperationEnabled(op, true)
+		}
+		c := datadog.NewAPIClient(cfg)
+		ctx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &rumAudienceAPI{api: datadogV2.NewRumAudienceManagementApi(c), ctx: ctx}, nil
+	}
+}
+
+func buildRUMAudienceCmd(mkAPI func() (*rumAudienceAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	rum := &cobra.Command{Use: "rum"}
+	rum.AddCommand(newRUMAudienceCmd(mkAPI))
+	root.AddCommand(rum)
+	return root, buf
+}
+
+func TestRUMAudienceConnectionsList(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockConnectionsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "connections", "list", "--entity", "users"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "conn-1", "crm"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMAudienceConnectionsListRequiresEntity(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "connections", "list"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --entity flag")
+	}
+}
+
+func TestRUMAudienceConnectionsListJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockConnectionsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "connections", "list", "--entity", "users", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d entries, want 1", len(result))
+	}
+}
+
+func TestRUMAudienceConnectionsCreate(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{
+		"rum", "audience", "connections", "create",
+		"--entity", "users",
+		"--join-attribute", "user.email",
+		"--join-type", "left",
+		"--type", "crm",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(string(capturedBody), "user.email") {
+		t.Errorf("request body missing join_attribute: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "created") {
+		t.Errorf("output missing 'created':\n%s", buf.String())
+	}
+}
+
+func TestRUMAudienceConnectionsUpdate(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "connections", "update", "--entity", "users"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !called {
+		t.Error("expected PUT request to be made")
+	}
+	if !strings.Contains(buf.String(), "updated") {
+		t.Errorf("output missing 'updated':\n%s", buf.String())
+	}
+}
+
+func TestRUMAudienceConnectionsDelete(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "connections", "delete", "conn-1", "--entity", "users", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !called {
+		t.Error("expected DELETE request to be made")
+	}
+	if !strings.Contains(buf.String(), "deleted") {
+		t.Errorf("output missing 'deleted':\n%s", buf.String())
+	}
+}
+
+func TestRUMAudienceConnectionsDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "connections", "delete", "conn-1", "--entity", "users"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --yes flag")
+	}
+}
+
+func TestRUMAudienceMapping(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMappingResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "mapping", "--entity", "users"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ATTRIBUTE", "user.email", "Email", "string"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMAudienceMappingRequiresEntity(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "mapping"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --entity flag")
+	}
+}
+
+func TestRUMAudienceQueryUsers(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockQueryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "query-users", "--query", "email:*@example.com", "--limit", "10"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(string(capturedBody), "email:*@example.com") {
+		t.Errorf("request body missing query: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "total: 2") {
+		t.Errorf("output missing total:\n%s", buf.String())
+	}
+}
+
+func TestRUMAudienceQueryUsersJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockQueryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "query-users", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 2 {
+		t.Errorf("got %d entries, want 2", len(result))
+	}
+}
+
+func TestRUMAudienceQueryAccounts(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockQueryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "query-accounts", "--query", "plan:enterprise"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(string(capturedBody), "plan:enterprise") {
+		t.Errorf("request body missing query: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "total: 2") {
+		t.Errorf("output missing total:\n%s", buf.String())
+	}
+}
+
+func TestRUMAudienceQueryAccountsJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockQueryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
+	root.SetArgs([]string{"rum", "audience", "query-accounts", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 2 {
+		t.Errorf("got %d entries, want 2", len(result))
+	}
+}

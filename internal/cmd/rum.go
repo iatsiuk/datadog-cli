@@ -106,6 +106,32 @@ func defaultRUMSessionsAPI() (*rumSessionsAPI, error) {
 	}, nil
 }
 
+type rumAudienceAPI struct {
+	api *datadogV2.RumAudienceManagementApi
+	ctx context.Context
+}
+
+func defaultRUMAudienceAPI() (*rumAudienceAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	apiCfg := c.GetConfig()
+	for _, op := range []string{
+		"v2.ListConnections",
+		"v2.CreateConnection",
+		"v2.UpdateConnection",
+		"v2.DeleteConnection",
+		"v2.GetMapping",
+		"v2.QueryUsers",
+		"v2.QueryAccounts",
+	} {
+		apiCfg.SetUnstableOperationEnabled(op, true)
+	}
+	return &rumAudienceAPI{api: datadogV2.NewRumAudienceManagementApi(c), ctx: ctx}, nil
+}
+
 // NewRUMCommand returns the rum cobra command group.
 func NewRUMCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -120,6 +146,7 @@ func NewRUMCommand() *cobra.Command {
 	cmd.AddCommand(newRUMPlaylistCmd(defaultRUMPlaylistsAPI))
 	cmd.AddCommand(newRUMHeatmapCmd(defaultRUMHeatmapsAPI))
 	cmd.AddCommand(newRUMSessionCmd(defaultRUMSessionsAPI))
+	cmd.AddCommand(newRUMAudienceCmd(defaultRUMAudienceAPI))
 	return cmd
 }
 
@@ -2158,6 +2185,396 @@ func newRUMSessionHistoryCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Comma
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
 	}
+}
+
+func newRUMAudienceCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "audience",
+		Short: "Manage RUM audience data connections, mappings, and queries",
+	}
+	connections := &cobra.Command{
+		Use:   "connections",
+		Short: "Manage audience data connections",
+	}
+	connections.AddCommand(newRUMAudienceConnectionsListCmd(mkAPI))
+	connections.AddCommand(newRUMAudienceConnectionsCreateCmd(mkAPI))
+	connections.AddCommand(newRUMAudienceConnectionsUpdateCmd(mkAPI))
+	connections.AddCommand(newRUMAudienceConnectionsDeleteCmd(mkAPI))
+	cmd.AddCommand(connections)
+	cmd.AddCommand(newRUMAudienceMappingCmd(mkAPI))
+	cmd.AddCommand(newRUMAudienceQueryUsersCmd(mkAPI))
+	cmd.AddCommand(newRUMAudienceQueryAccountsCmd(mkAPI))
+	return cmd
+}
+
+func newRUMAudienceConnectionsListCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
+	var entity string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List audience data connections",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if entity == "" {
+				return fmt.Errorf("--entity is required")
+			}
+			aapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := aapi.api.ListConnections(aapi.ctx, entity)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list connections: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			d := resp.GetData()
+			a := d.GetAttributes()
+			conns := a.GetConnections()
+			if asJSON {
+				if conns == nil {
+					conns = []datadogV2.ListConnectionsResponseDataAttributesConnectionsItems{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), conns)
+			}
+
+			headers := []string{"ID", "TYPE", "JOIN ATTRIBUTE", "CREATED AT"}
+			var rows [][]string
+			for _, c := range conns {
+				id := c.GetId()
+				typ := c.GetType()
+				join := ""
+				if j := c.Join; j != nil {
+					join = j.GetAttribute()
+				}
+				createdAt := ""
+				if c.CreatedAt != nil {
+					createdAt = c.CreatedAt.Format(time.RFC3339)
+				}
+				rows = append(rows, []string{id, typ, join, createdAt})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&entity, "entity", "", "entity name (required)")
+	return cmd
+}
+
+func newRUMAudienceConnectionsCreateCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
+	var (
+		entity        string
+		joinAttribute string
+		joinType      string
+		connType      string
+	)
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create an audience data connection",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if entity == "" {
+				return fmt.Errorf("--entity is required")
+			}
+			if joinAttribute == "" || joinType == "" || connType == "" {
+				return fmt.Errorf("--join-attribute, --join-type, and --type are required")
+			}
+			aapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewCreateConnectionRequestDataAttributes(joinAttribute, joinType, connType)
+			data := datadogV2.NewCreateConnectionRequestData(datadogV2.UPDATECONNECTIONREQUESTDATATYPE_CONNECTION_ID)
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewCreateConnectionRequest()
+			body.SetData(*data)
+
+			httpResp, err := aapi.api.CreateConnection(aapi.ctx, entity, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create connection: %w", err)
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "connection created")
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&entity, "entity", "", "entity name (required)")
+	cmd.Flags().StringVar(&joinAttribute, "join-attribute", "", "join attribute (required)")
+	cmd.Flags().StringVar(&joinType, "join-type", "", "join type (required)")
+	cmd.Flags().StringVar(&connType, "type", "", "connection type (required)")
+	return cmd
+}
+
+func newRUMAudienceConnectionsUpdateCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
+	var entity string
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update an audience data connection",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if entity == "" {
+				return fmt.Errorf("--entity is required")
+			}
+			aapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewUpdateConnectionRequestDataAttributes()
+			data := datadogV2.NewUpdateConnectionRequestData("", datadogV2.UPDATECONNECTIONREQUESTDATATYPE_CONNECTION_ID)
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewUpdateConnectionRequest()
+			body.SetData(*data)
+
+			httpResp, err := aapi.api.UpdateConnection(aapi.ctx, entity, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update connection: %w", err)
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "connection updated")
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&entity, "entity", "", "entity name (required)")
+	return cmd
+}
+
+func newRUMAudienceConnectionsDeleteCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
+	var (
+		entity string
+		yes    bool
+	)
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete an audience data connection",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fmt.Errorf("use --yes to confirm deletion")
+			}
+			if entity == "" {
+				return fmt.Errorf("--entity is required")
+			}
+			aapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			httpResp, err := aapi.api.DeleteConnection(aapi.ctx, args[0], entity)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete connection: %w", err)
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "connection deleted")
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&entity, "entity", "", "entity name (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
+}
+
+func newRUMAudienceMappingCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
+	var entity string
+	cmd := &cobra.Command{
+		Use:   "mapping",
+		Short: "Get entity mapping configuration",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if entity == "" {
+				return fmt.Errorf("--entity is required")
+			}
+			aapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := aapi.api.GetMapping(aapi.ctx, entity)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get mapping: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			md := resp.GetData()
+			ma := md.GetAttributes()
+			attrs := ma.GetAttributes()
+			if asJSON {
+				if attrs == nil {
+					attrs = []datadogV2.GetMappingResponseDataAttributesAttributesItems{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), attrs)
+			}
+
+			headers := []string{"ATTRIBUTE", "DISPLAY NAME", "TYPE", "CUSTOM"}
+			var rows [][]string
+			for _, a := range attrs {
+				custom := "false"
+				if v := a.IsCustom; v != nil && *v {
+					custom = "true"
+				}
+				rows = append(rows, []string{
+					a.GetAttribute(),
+					a.GetDisplayName(),
+					a.GetType(),
+					custom,
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&entity, "entity", "", "entity name (required)")
+	return cmd
+}
+
+func newRUMAudienceQueryUsersCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
+	var (
+		query string
+		limit int
+	)
+	cmd := &cobra.Command{
+		Use:   "query-users",
+		Short: "Query RUM audience users",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			aapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewQueryUsersRequestDataAttributes()
+			if query != "" {
+				attrs.SetQuery(query)
+			}
+			if limit > 0 {
+				l := int64(limit) //nolint:gosec
+				attrs.SetLimit(l)
+			}
+			data := datadogV2.NewQueryUsersRequestData(datadogV2.QUERYUSERSREQUESTDATATYPE_QUERY_USERS_REQUEST)
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewQueryUsersRequest()
+			body.SetData(*data)
+
+			resp, httpResp, err := aapi.api.QueryUsers(aapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("query users: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			ud := resp.GetData()
+			ua := ud.GetAttributes()
+			hits := ua.GetHits()
+			if asJSON {
+				if hits == nil {
+					hits = []map[string]interface{}{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), hits)
+			}
+
+			total := ua.GetTotal()
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "total: %d\n", total)
+			if err != nil {
+				return err
+			}
+			for _, h := range hits {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%v\n", h)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&query, "query", "", "filter query")
+	cmd.Flags().IntVar(&limit, "limit", 0, "max results")
+	return cmd
+}
+
+func newRUMAudienceQueryAccountsCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
+	var (
+		query string
+		limit int
+	)
+	cmd := &cobra.Command{
+		Use:   "query-accounts",
+		Short: "Query RUM audience accounts",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			aapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewQueryAccountRequestDataAttributes()
+			if query != "" {
+				attrs.SetQuery(query)
+			}
+			if limit > 0 {
+				l := int64(limit) //nolint:gosec
+				attrs.SetLimit(l)
+			}
+			data := datadogV2.NewQueryAccountRequestData(datadogV2.QUERYACCOUNTREQUESTDATATYPE_QUERY_ACCOUNT_REQUEST)
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewQueryAccountRequest()
+			body.SetData(*data)
+
+			resp, httpResp, err := aapi.api.QueryAccounts(aapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("query accounts: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			ad := resp.GetData()
+			aa := ad.GetAttributes()
+			hits := aa.GetHits()
+			if asJSON {
+				if hits == nil {
+					hits = []map[string]interface{}{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), hits)
+			}
+
+			total := aa.GetTotal()
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "total: %d\n", total)
+			if err != nil {
+				return err
+			}
+			for _, h := range hits {
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%v\n", h)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&query, "query", "", "filter query")
+	cmd.Flags().IntVar(&limit, "limit", 0, "max results")
+	return cmd
 }
 
 // parseRUMMetricComputeSpec parses "count" or "sum:@metric.path" into aggregation type and path.
