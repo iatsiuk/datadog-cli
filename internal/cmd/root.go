@@ -13,6 +13,7 @@ func NewRootCommand(version string) *cobra.Command {
 	}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	root.AddCommand(newCompletionCmd(root))
+	root.AddCommand(NewAPMCommand())
 	root.AddCommand(NewLogsCommand())
 	root.AddCommand(NewMetricsCommand())
 	return root

@@ -139,6 +139,32 @@ dd metrics estimate <name> [--filter-groups <tags>] [--filter-num-aggregations <
 `--points` is a repeatable flag; each value is a `timestamp:value` pair (e.g. `--points 1700000000:42.0 --points 1700000060:43.5`).
 `--aggregator` defaults to `avg`.
 
+### apm
+
+Search spans, list services, manage APM retention filters and span-based metrics.
+
+```
+dd apm search [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--sort <field>]
+dd apm tail [--query <query>] [--service <name>]
+dd apm aggregate --compute <fn>[:<metric>] [--query <query>] [--from <time>] [--to <time>] [--group-by <facets>]
+dd apm services --env <env>
+dd apm retention-filter list
+dd apm retention-filter show <id>
+dd apm retention-filter create --name <name> --filter <query> --rate <0.0-1.0>
+dd apm retention-filter update <id> --name <name> --filter <query> --rate <0.0-1.0> --enabled <true|false>
+dd apm retention-filter delete <id> --yes
+dd apm span-metric list
+dd apm span-metric show <id>
+dd apm span-metric create --id <id> --compute <count|distribution> [--path <attr>] --filter <query> [--group-by <facets>]
+dd apm span-metric update <id> [--filter <query>] [--group-by <facets>]
+dd apm span-metric delete <id> --yes
+```
+
+Search output columns: `TIMESTAMP | SERVICE | RESOURCE | DURATION | STATUS`
+
+Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
+Default `--from` is `now-15m`, default `--to` is `now`.
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
