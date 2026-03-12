@@ -404,6 +404,9 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 			if layoutType == "" {
 				return fmt.Errorf("--layout-type is required")
 			}
+			if layoutType != "ordered" && layoutType != "free" {
+				return fmt.Errorf("--layout-type must be \"ordered\" or \"free\"")
+			}
 
 			body := datadogV1.Dashboard{
 				Title:      title,
@@ -416,6 +419,9 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 
 			if tags != "" {
 				tagList := strings.Split(tags, ",")
+				for i := range tagList {
+					tagList[i] = strings.TrimSpace(tagList[i])
+				}
 				body.Tags = *datadog.NewNullableList(&tagList)
 			}
 
@@ -490,12 +496,18 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 				if err := json.Unmarshal([]byte(bodyJSON), &body); err != nil {
 					return fmt.Errorf("parse --body: %w", err)
 				}
+				if body.LayoutType == "" {
+					return fmt.Errorf("--body must include layout_type")
+				}
 			} else {
 				if title == "" {
 					return fmt.Errorf("--title is required (or use --body for full JSON)")
 				}
 				if layoutType == "" {
 					return fmt.Errorf("--layout-type is required (or use --body for full JSON)")
+				}
+				if layoutType != "ordered" && layoutType != "free" {
+					return fmt.Errorf("--layout-type must be \"ordered\" or \"free\"")
 				}
 				body.Title = title
 				body.LayoutType = datadogV1.DashboardLayoutType(layoutType)
@@ -505,6 +517,9 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 				}
 				if tags != "" {
 					tagList := strings.Split(tags, ",")
+					for i := range tagList {
+						tagList[i] = strings.TrimSpace(tagList[i])
+					}
 					body.Tags = *datadog.NewNullableList(&tagList)
 				}
 				if widgetsJSON != "" {
@@ -668,6 +683,17 @@ func newDashboardListsAddItemsCmd(mkAPI func() (*dashboardListsAPI, error)) *cob
 			if dashType == "" {
 				return fmt.Errorf("--type is required")
 			}
+			validTypes := []string{"custom_timeboard", "custom_screenboard", "integration_timeboard", "integration_screenboard", "host_timeboard"}
+			validType := false
+			for _, vt := range validTypes {
+				if dashType == vt {
+					validType = true
+					break
+				}
+			}
+			if !validType {
+				return fmt.Errorf("--type must be one of: custom_timeboard, custom_screenboard, integration_timeboard, integration_screenboard, host_timeboard")
+			}
 			listID, err := parseListID(id)
 			if err != nil {
 				return err
@@ -719,6 +745,17 @@ func newDashboardListsRemoveItemsCmd(mkAPI func() (*dashboardListsAPI, error)) *
 			}
 			if dashType == "" {
 				return fmt.Errorf("--type is required")
+			}
+			validTypes := []string{"custom_timeboard", "custom_screenboard", "integration_timeboard", "integration_screenboard", "host_timeboard"}
+			validType := false
+			for _, vt := range validTypes {
+				if dashType == vt {
+					validType = true
+					break
+				}
+			}
+			if !validType {
+				return fmt.Errorf("--type must be one of: custom_timeboard, custom_screenboard, integration_timeboard, integration_screenboard, host_timeboard")
 			}
 			listID, err := parseListID(id)
 			if err != nil {

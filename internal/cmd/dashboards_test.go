@@ -970,6 +970,11 @@ func TestDashboardsCreateMissingRequiredFlags(t *testing.T) {
 			args:    []string{"dashboards", "create", "--title", "Test"},
 			wantErr: "--layout-type is required",
 		},
+		{
+			name:    "invalid layout-type",
+			args:    []string{"dashboards", "create", "--title", "Test", "--layout-type", "grid"},
+			wantErr: "--layout-type must be",
+		},
 	}
 
 	for _, tc := range tests {
@@ -1058,6 +1063,11 @@ func TestDashboardListsAddItemsMissingFlags(t *testing.T) {
 			name:    "missing type",
 			args:    []string{"dashboards", "lists", "add-items", "--id", "42", "--dashboard", "abc-123"},
 			wantErr: "--type is required",
+		},
+		{
+			name:    "invalid type",
+			args:    []string{"dashboards", "lists", "add-items", "--id", "42", "--dashboard", "abc-123", "--type", "unknown_type"},
+			wantErr: "--type must be one of",
 		},
 	}
 
@@ -1148,6 +1158,11 @@ func TestDashboardListsRemoveItemsMissingFlags(t *testing.T) {
 			args:    []string{"dashboards", "lists", "remove-items", "--id", "42", "--dashboard", "abc-123"},
 			wantErr: "--type is required",
 		},
+		{
+			name:    "invalid type",
+			args:    []string{"dashboards", "lists", "remove-items", "--id", "42", "--dashboard", "abc-123", "--type", "unknown_type"},
+			wantErr: "--type must be one of",
+		},
 	}
 
 	for _, tc := range tests {
@@ -1163,5 +1178,54 @@ func TestDashboardListsRemoveItemsMissingFlags(t *testing.T) {
 				t.Errorf("error %q missing %q", err.Error(), tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestDashboardsUpdateBodyMissingLayoutType(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardsUpdateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "update", "--id", "abc-123", "--body", `{"title":"T","widgets":[]}`})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --body missing layout_type")
+	}
+	if !strings.Contains(err.Error(), "layout_type") {
+		t.Errorf("error %q missing \"layout_type\"", err.Error())
+	}
+}
+
+func TestDashboardsCreateTagsTrimmed(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := new(bytes.Buffer)
+		b.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = b.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"abc-123","title":"T","layout_type":"ordered","url":"/dash/abc-123","widgets":[]}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildDashboardsCreateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "create", "--title", "T", "--layout-type", "ordered", "--widgets-json", "[]", "--tags", "team:infra, env:prod"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	tags, ok := body["tags"].([]interface{})
+	if !ok || len(tags) != 2 {
+		t.Fatalf("expected 2 tags, got %v", body["tags"])
+	}
+	if tags[1] != "env:prod" {
+		t.Errorf("tag[1] = %q, want %q (leading space not trimmed)", tags[1], "env:prod")
 	}
 }
