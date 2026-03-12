@@ -687,7 +687,7 @@ func TestRUMMetricListTable(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"ID", "EVENT TYPE", "COMPUTE", "FILTER", "my.rum.metric", "view", "count", "@view.url:*"} {
+	for _, want := range []string{"ID", "EVENT TYPE", "COMPUTE", "FILTER", "GROUP BY", "my.rum.metric", "view", "count", "@view.url:*", "@view.url"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}

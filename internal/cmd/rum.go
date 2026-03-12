@@ -718,7 +718,7 @@ func newRUMMetricListCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			headers := []string{"ID", "EVENT TYPE", "COMPUTE", "FILTER"}
+			headers := []string{"ID", "EVENT TYPE", "COMPUTE", "FILTER", "GROUP BY"}
 			var rows [][]string
 			for _, m := range resp.GetData() {
 				id := m.GetId()
@@ -731,7 +731,11 @@ func newRUMMetricListCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command {
 				}
 				mFilter := attrs.GetFilter()
 				filter := mFilter.GetQuery()
-				rows = append(rows, []string{id, eventType, computeStr, filter})
+				var groupByPaths []string
+				for _, gb := range attrs.GetGroupBy() {
+					groupByPaths = append(groupByPaths, gb.GetPath())
+				}
+				rows = append(rows, []string{id, eventType, computeStr, filter, strings.Join(groupByPaths, ", ")})
 			}
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
