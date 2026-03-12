@@ -388,6 +388,7 @@ func newMonitorsUpdateCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 			if p := existing.GetPriority(); p != 0 {
 				body.SetPriority(p)
 			}
+			body.SetOptions(existing.GetOptions())
 
 			// override with explicitly changed flags
 			if cmd.Flags().Changed("name") {
@@ -512,6 +513,9 @@ func newMonitorsMuteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 			if monitorID == 0 {
 				return errMonitorIDRequired
 			}
+			if scope == "" {
+				return fmt.Errorf("--scope cannot be empty")
+			}
 
 			mapi, err := mkAPI()
 			if err != nil {
@@ -594,6 +598,9 @@ func newMonitorsUnmuteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 				opts.SetSilenced(map[string]int64{})
 			} else {
 				silenced := opts.GetSilenced()
+				if silenced == nil {
+					silenced = make(map[string]int64)
+				}
 				delete(silenced, scope)
 				opts.SetSilenced(silenced)
 			}

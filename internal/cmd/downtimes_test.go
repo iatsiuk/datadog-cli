@@ -33,27 +33,6 @@ func newTestDowntimesAPI(srv *httptest.Server) func() (*downtimesAPI, error) {
 	}
 }
 
-func TestNewTestDowntimesAPI(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(nil)
-	defer srv.Close()
-
-	mkAPI := newTestDowntimesAPI(srv)
-	api, err := mkAPI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if api == nil {
-		t.Fatal("expected non-nil downtimesAPI")
-	}
-	if api.api == nil {
-		t.Fatal("expected non-nil datadogV2.DowntimesApi")
-	}
-	if api.ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
-}
-
 const mockDowntimesListResponse = `{
 	"data": [
 		{

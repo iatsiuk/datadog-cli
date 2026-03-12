@@ -33,27 +33,6 @@ func newTestPoliciesAPI(srv *httptest.Server) func() (*policiesAPI, error) {
 	}
 }
 
-func TestNewTestPoliciesAPI(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(nil)
-	defer srv.Close()
-
-	mkAPI := newTestPoliciesAPI(srv)
-	api, err := mkAPI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if api == nil {
-		t.Fatal("expected non-nil policiesAPI")
-	}
-	if api.api == nil {
-		t.Fatal("expected non-nil datadogV2.MonitorsApi")
-	}
-	if api.ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
-}
-
 const mockPolicyListResponse = `{
 	"data": [
 		{

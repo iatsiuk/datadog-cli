@@ -33,27 +33,6 @@ func newTestMonitorsAPI(srv *httptest.Server) func() (*monitorsAPI, error) {
 	}
 }
 
-func TestNewTestMonitorsAPI(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(nil)
-	defer srv.Close()
-
-	mkAPI := newTestMonitorsAPI(srv)
-	api, err := mkAPI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if api == nil {
-		t.Fatal("expected non-nil monitorsAPI")
-	}
-	if api.api == nil {
-		t.Fatal("expected non-nil datadogV1.MonitorsApi")
-	}
-	if api.ctx == nil {
-		t.Fatal("expected non-nil context")
-	}
-}
-
 func TestNewMonitorsCommand_Subcommands(t *testing.T) {
 	t.Parallel()
 	cmd := NewMonitorsCommand()
@@ -662,6 +641,9 @@ func TestMonitorsMute_Success(t *testing.T) {
 	if !strings.Contains(body, "silenced") {
 		t.Errorf("request body missing silenced field\nbody: %s", body)
 	}
+	if !strings.Contains(body, `"*"`) {
+		t.Errorf("request body missing default scope '*'\nbody: %s", body)
+	}
 }
 
 func TestMonitorsMute_WithEnd(t *testing.T) {
@@ -736,8 +718,8 @@ func TestMonitorsUnmute_Success(t *testing.T) {
 
 	// silenced should be empty map after unmute
 	body := string(capturedBody)
-	if !strings.Contains(body, "silenced") {
-		t.Errorf("request body missing silenced field\nbody: %s", body)
+	if !strings.Contains(body, `"silenced":{}`) {
+		t.Errorf("request body silenced field should be empty map\nbody: %s", body)
 	}
 }
 
