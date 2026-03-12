@@ -69,48 +69,6 @@ func TestNewHostsCommand_Subcommands(t *testing.T) {
 	}
 }
 
-func TestNewTestHostsAPI(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(nil)
-	defer srv.Close()
-
-	mkAPI := newTestHostsAPI(srv)
-	api, err := mkAPI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if api == nil {
-		t.Fatal("expected non-nil hostsAPI")
-	}
-	if api.api == nil {
-		t.Fatal("expected non-nil api.api")
-	}
-	if api.ctx == nil {
-		t.Fatal("expected non-nil api.ctx")
-	}
-}
-
-func TestNewTestTagsAPI(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(nil)
-	defer srv.Close()
-
-	mkAPI := newTestTagsAPI(srv)
-	api, err := mkAPI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if api == nil {
-		t.Fatal("expected non-nil tagsAPI")
-	}
-	if api.api == nil {
-		t.Fatal("expected non-nil api.api")
-	}
-	if api.ctx == nil {
-		t.Fatal("expected non-nil api.ctx")
-	}
-}
-
 const mockHostsListResponse = `{
 	"host_list": [
 		{
@@ -608,6 +566,12 @@ func TestTagsCreateSuccess(t *testing.T) {
 	if len(tagsList) != 2 {
 		t.Errorf("expected 2 tags in request, got %d", len(tagsList))
 	}
+	if tagsList[0] != "env:prod" {
+		t.Errorf("expected tagsList[0] = env:prod, got %v", tagsList[0])
+	}
+	if tagsList[1] != "role:frontend" {
+		t.Errorf("expected tagsList[1] = role:frontend, got %v", tagsList[1])
+	}
 }
 
 func TestTagsCreateMissingFlags(t *testing.T) {
@@ -708,6 +672,12 @@ func TestTagsUpdateSuccess(t *testing.T) {
 	if len(tagsList) != 2 {
 		t.Errorf("expected 2 tags in request, got %d", len(tagsList))
 	}
+	if tagsList[0] != "env:prod" {
+		t.Errorf("expected tagsList[0] = env:prod, got %v", tagsList[0])
+	}
+	if tagsList[1] != "role:frontend" {
+		t.Errorf("expected tagsList[1] = role:frontend, got %v", tagsList[1])
+	}
 }
 
 func TestTagsUpdateMissingFlags(t *testing.T) {
@@ -761,8 +731,12 @@ func TestTagsDeleteMissingYes(t *testing.T) {
 
 	root, _ := buildTagsDeleteCmd(newTestTagsAPI(srv))
 	root.SetArgs([]string{"hosts", "tags", "delete", "--name", "web-01"})
-	if err := root.Execute(); err == nil {
+	err := root.Execute()
+	if err == nil {
 		t.Error("expected error when --yes is missing, got nil")
+	}
+	if err != nil && !strings.Contains(err.Error(), "--yes") {
+		t.Errorf("expected error to mention --yes, got: %v", err)
 	}
 }
 

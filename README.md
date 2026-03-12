@@ -283,9 +283,9 @@ datadog-cli hosts tags update --name <hostname> --tags <tag1,tag2> [--source <so
 datadog-cli hosts tags delete --name <hostname> --yes [--source <source>]
 ```
 
-List output columns: `NAME | ID | ALIASES | APPS | SOURCES | UP | LAST REPORTED`
+List output columns: `NAME | ID | ALIASES | APPS | SOURCES | UP | LAST_REPORTED`
 
-Totals output fields: TotalUp, TotalActive
+Totals output columns: `TOTAL_ACTIVE | TOTAL_UP`
 
 `--filter` accepts Datadog host search query (e.g. `env:prod`).
 `--from` accepts a Unix timestamp; only hosts active since that time are returned.

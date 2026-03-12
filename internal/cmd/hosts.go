@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -210,6 +211,8 @@ func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
 	var (
 		filter string
 		from   int64
+		count  int64
+		start  int64
 	)
 
 	cmd := &cobra.Command{
@@ -227,6 +230,12 @@ func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
 			}
 			if from != 0 {
 				opts = opts.WithFrom(from)
+			}
+			if count != 0 {
+				opts = opts.WithCount(count)
+			}
+			if start != 0 {
+				opts = opts.WithStart(start)
 			}
 
 			resp, httpResp, err := hapi.api.ListHosts(hapi.ctx, *opts)
@@ -273,6 +282,8 @@ func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
 
 	cmd.Flags().StringVar(&filter, "filter", "", "filter hosts by name, alias, or tag")
 	cmd.Flags().Int64Var(&from, "from", 0, "only show hosts active since this Unix timestamp")
+	cmd.Flags().Int64Var(&count, "count", 0, "max number of hosts to return")
+	cmd.Flags().Int64Var(&start, "start", 0, "starting offset for pagination")
 	return cmd
 }
 
@@ -341,7 +352,10 @@ func newTagsCreateCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
 				return err
 			}
 
-			tagList := strings.Split(tags, ",")
+			tagList := parseTags(tags)
+			if len(tagList) == 0 {
+				return fmt.Errorf("--tags: no valid tags provided")
+			}
 			body := datadogV1.NewHostTags()
 			body.SetTags(tagList)
 
@@ -397,7 +411,10 @@ func newTagsUpdateCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
 				return err
 			}
 
-			tagList := strings.Split(tags, ",")
+			tagList := parseTags(tags)
+			if len(tagList) == 0 {
+				return fmt.Errorf("--tags: no valid tags provided")
+			}
 			body := datadogV1.NewHostTags()
 			body.SetTags(tagList)
 
@@ -516,10 +533,15 @@ func newTagsListCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
 			}
 
 			tags := resp.GetTags()
+			keys := make([]string, 0, len(tags))
+			for tag := range tags {
+				keys = append(keys, tag)
+			}
+			sort.Strings(keys)
 			headers := []string{"TAG", "HOSTS"}
 			rows := make([][]string, 0, len(tags))
-			for tag, hosts := range tags {
-				rows = append(rows, []string{tag, strings.Join(hosts, ", ")})
+			for _, tag := range keys {
+				rows = append(rows, []string{tag, strings.Join(tags[tag], ", ")})
 			}
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
@@ -527,4 +549,16 @@ func newTagsListCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
 
 	cmd.Flags().StringVar(&source, "source", "", "filter tags by source (e.g. users, datadog, chef)")
 	return cmd
+}
+
+// parseTags splits a comma-separated tag string and filters empty elements.
+func parseTags(raw string) []string {
+	parts := strings.Split(raw, ",")
+	result := parts[:0]
+	for _, p := range parts {
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
