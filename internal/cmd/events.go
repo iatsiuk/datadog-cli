@@ -39,6 +39,83 @@ func NewEventsCommand() *cobra.Command {
 	cmd.AddCommand(newEventsSearchCmd(defaultEventsAPI))
 	cmd.AddCommand(newEventsShowCmd(defaultEventsAPI))
 	cmd.AddCommand(newEventsCreateCmd(defaultEventsAPI))
+	cmd.AddCommand(newEventsTailCmd(defaultEventsAPI))
+	return cmd
+}
+
+func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
+	var (
+		query    string
+		interval time.Duration
+	)
+
+	cmd := &cobra.Command{
+		Use:   "tail",
+		Short: "Tail events in real time",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			eapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			ctx := eapi.ctx
+			seen := make(map[string]bool)
+			from := time.Now()
+
+			for {
+				fromStr := from.UTC().Format(time.RFC3339)
+				toStr := time.Now().UTC().Format(time.RFC3339)
+
+				opts := datadogV2.NewListEventsOptionalParameters().
+					WithFilterFrom(fromStr).
+					WithFilterTo(toStr)
+				if query != "" {
+					opts = opts.WithFilterQuery(query)
+				}
+
+				resp, httpResp, err := eapi.api.ListEvents(ctx, *opts)
+				if httpResp != nil {
+					_ = httpResp.Body.Close()
+				}
+				if err != nil {
+					// stop on context cancellation
+					if ctx.Err() != nil {
+						return nil
+					}
+					return fmt.Errorf("list events: %w", err)
+				}
+
+				for _, event := range resp.GetData() {
+					id := event.GetId()
+					if seen[id] {
+						continue
+					}
+					seen[id] = true
+					attrs := event.GetAttributes()
+					ts := ""
+					if t := attrs.Timestamp; t != nil {
+						ts = t.UTC().Format(time.RFC3339)
+					}
+					inner := attrs.GetAttributes()
+					title := inner.GetTitle()
+					source := inner.GetSourceTypeName()
+					tags := strings.Join(attrs.GetTags(), ", ")
+					fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", ts, title, source, tags) //nolint:errcheck
+				}
+
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-time.After(interval):
+				}
+
+				from = time.Now().Add(-interval)
+			}
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "event filter query")
+	cmd.Flags().DurationVar(&interval, "interval", 10*time.Second, "poll interval")
 	return cmd
 }
 

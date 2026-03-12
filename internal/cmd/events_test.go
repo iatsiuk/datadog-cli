@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -593,5 +594,155 @@ func TestEventsListDefaultFrom(t *testing.T) {
 	}
 	if q := req.URL.Query().Get("filter[from]"); q == "" {
 		t.Error("filter[from] should be set when --from is omitted")
+	}
+}
+
+func buildEventsTailCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	events := &cobra.Command{Use: "events"}
+	events.AddCommand(newEventsTailCmd(mkAPI))
+	root.AddCommand(events)
+	return root, buf
+}
+
+func TestEventsTailFlagQuery(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		reqCount    int
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		reqCount++
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mkAPI := func() (*eventsAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			ctx,
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &eventsAPI{api: datadogV2.NewEventsApi(c), ctx: apiCtx}, nil
+	}
+
+	root, _ := buildEventsTailCmd(mkAPI)
+	root.SetArgs([]string{"events", "tail", "--query", "source:github", "--interval", "50ms"})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- root.Execute()
+	}()
+
+	// wait for at least one poll then cancel
+	for i := 0; i < 100; i++ {
+		mu.Lock()
+		count := reqCount
+		mu.Unlock()
+		if count >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if got := req.URL.Query().Get("filter[query]"); got != "source:github" {
+		t.Errorf("filter[query] = %q, want source:github", got)
+	}
+}
+
+func TestEventsTailPrintsNewEvents(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu       sync.Mutex
+		reqCount int
+	)
+	// first poll returns one event, subsequent polls return empty
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		count := reqCount
+		reqCount++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if count == 0 {
+			fmt.Fprint(w, mockEventsResponse) //nolint:errcheck
+		} else {
+			fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mkAPI := func() (*eventsAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			ctx,
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &eventsAPI{api: datadogV2.NewEventsApi(c), ctx: apiCtx}, nil
+	}
+
+	root, buf := buildEventsTailCmd(mkAPI)
+	root.SetArgs([]string{"events", "tail", "--interval", "50ms"})
+
+	done := make(chan error, 1)
+	go func() {
+		done <- root.Execute()
+	}()
+
+	// wait for at least 2 polls to ensure first event was printed
+	for i := 0; i < 100; i++ {
+		mu.Lock()
+		count := reqCount
+		mu.Unlock()
+		if count >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	out := buf.String()
+	if !strings.Contains(out, "Deploy v2.1") {
+		t.Errorf("output missing event title:\n%s", out)
 	}
 }
