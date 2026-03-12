@@ -374,6 +374,114 @@ func TestDashboardsCreateWithWidgetsJSON(t *testing.T) {
 	}
 }
 
+func buildDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	dashboards := &cobra.Command{Use: "dashboards"}
+	dashboards.AddCommand(newDashboardsUpdateCmd(mkAPI))
+	root.AddCommand(dashboards)
+	return root, buf
+}
+
+const mockDashboardUpdateResponse = `{
+	"id": "abc-123",
+	"title": "Updated Dashboard",
+	"layout_type": "ordered",
+	"url": "/dashboard/abc-123/updated-dashboard",
+	"widgets": []
+}`
+
+func TestDashboardsUpdateRequestBody(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		b := new(bytes.Buffer)
+		b.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = b.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardsUpdateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "update", "--id", "abc-123", "--title", "Updated Dashboard", "--layout-type", "ordered"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "abc-123") {
+		t.Errorf("request path %q missing dashboard id", capturedPath)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body JSON: %v", err)
+	}
+	if body["title"] != "Updated Dashboard" {
+		t.Errorf("request body title = %q, want %q", body["title"], "Updated Dashboard")
+	}
+	if body["layout_type"] != "ordered" {
+		t.Errorf("request body layout_type = %q, want %q", body["layout_type"], "ordered")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "abc-123") {
+		t.Errorf("output missing dashboard id:\n%s", out)
+	}
+}
+
+func TestDashboardsUpdateFullReplace(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := new(bytes.Buffer)
+		b.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = b.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	bodyJSON := `{"title":"Updated Dashboard","layout_type":"ordered","widgets":[]}`
+	root, _ := buildDashboardsUpdateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "update", "--id", "abc-123", "--body", bodyJSON})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	if body["title"] != "Updated Dashboard" {
+		t.Errorf("title = %q, want %q", body["title"], "Updated Dashboard")
+	}
+}
+
+func TestDashboardsUpdateMissingID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardsUpdateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "update", "--title", "Test", "--layout-type", "ordered"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --id is missing")
+	}
+	if !strings.Contains(err.Error(), "--id is required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestDashboardsCreateMissingRequiredFlags(t *testing.T) {
 	t.Parallel()
 

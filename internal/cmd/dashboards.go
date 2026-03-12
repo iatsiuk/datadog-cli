@@ -38,6 +38,7 @@ func NewDashboardsCommand() *cobra.Command {
 	cmd.AddCommand(newDashboardsListCmd(defaultDashboardsAPI))
 	cmd.AddCommand(newDashboardsShowCmd(defaultDashboardsAPI))
 	cmd.AddCommand(newDashboardsCreateCmd(defaultDashboardsAPI))
+	cmd.AddCommand(newDashboardsUpdateCmd(defaultDashboardsAPI))
 	return cmd
 }
 
@@ -172,6 +173,97 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 	cmd.Flags().StringVar(&description, "description", "", "dashboard description")
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags (e.g. team:infra,env:prod)")
 	cmd.Flags().StringVar(&widgetsJSON, "widgets-json", "", "widgets as JSON array (inline or @file)")
+	return cmd
+}
+
+func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command {
+	var (
+		id          string
+		bodyJSON    string
+		title       string
+		layoutType  string
+		description string
+		tags        string
+		widgetsJSON string
+	)
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update a dashboard (full replace)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+
+			var body datadogV1.Dashboard
+
+			if bodyJSON != "" {
+				if err := json.Unmarshal([]byte(bodyJSON), &body); err != nil {
+					return fmt.Errorf("parse --body: %w", err)
+				}
+			} else {
+				if title == "" {
+					return fmt.Errorf("--title is required (or use --body for full JSON)")
+				}
+				if layoutType == "" {
+					return fmt.Errorf("--layout-type is required (or use --body for full JSON)")
+				}
+				body.Title = title
+				body.LayoutType = datadogV1.DashboardLayoutType(layoutType)
+
+				if description != "" {
+					body.Description = *datadog.NewNullableString(&description)
+				}
+				if tags != "" {
+					tagList := strings.Split(tags, ",")
+					body.Tags = *datadog.NewNullableList(&tagList)
+				}
+				if widgetsJSON != "" {
+					var widgets []datadogV1.Widget
+					if err := json.Unmarshal([]byte(widgetsJSON), &widgets); err != nil {
+						return fmt.Errorf("parse --widgets-json: %w", err)
+					}
+					body.Widgets = widgets
+				}
+			}
+
+			dapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := dapi.api.UpdateDashboard(dapi.ctx, id, body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update dashboard: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"ID", "TITLE", "LAYOUT", "URL"}
+			rows := [][]string{{
+				resp.GetId(),
+				resp.GetTitle(),
+				string(resp.GetLayoutType()),
+				resp.GetUrl(),
+			}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "dashboard ID (required)")
+	cmd.Flags().StringVar(&bodyJSON, "body", "", "full dashboard JSON (replaces all other flags)")
+	cmd.Flags().StringVar(&title, "title", "", "dashboard title")
+	cmd.Flags().StringVar(&layoutType, "layout-type", "", "layout type: ordered or free")
+	cmd.Flags().StringVar(&description, "description", "", "dashboard description")
+	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags")
+	cmd.Flags().StringVar(&widgetsJSON, "widgets-json", "", "widgets as JSON array")
 	return cmd
 }
 

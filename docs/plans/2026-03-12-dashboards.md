@@ -67,10 +67,10 @@
 - [x] run `make build` -- must pass
 
 ### Task 5: Dashboard update with tests
-- [ ] write tests for `dashboards update --id <id>` -- capture request body
-- [ ] write tests for `dashboards update` -- full replace semantics (dashboard API is PUT-based)
-- [ ] implement `newDashboardsUpdateCmd` -- accept full dashboard JSON or individual flags
-- [ ] run `make build` -- must pass
+- [x] write tests for `dashboards update --id <id>` -- capture request body
+- [x] write tests for `dashboards update` -- full replace semantics (dashboard API is PUT-based)
+- [x] implement `newDashboardsUpdateCmd` -- accept full dashboard JSON or individual flags
+- [x] run `make build` -- must pass
 
 ### Task 6: Dashboard delete with tests
 - [ ] write tests for `dashboards delete --id <id> --yes` -- success response
