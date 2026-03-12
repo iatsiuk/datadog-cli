@@ -43,6 +43,20 @@ func defaultRUMMetricsAPI() (*rumMetricsAPI, error) {
 	return &rumMetricsAPI{api: datadogV2.NewRumMetricsApi(c), ctx: ctx}, nil
 }
 
+type rumRetentionFiltersAPI struct {
+	api *datadogV2.RumRetentionFiltersApi
+	ctx context.Context
+}
+
+func defaultRUMRetentionFiltersAPI() (*rumRetentionFiltersAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &rumRetentionFiltersAPI{api: datadogV2.NewRumRetentionFiltersApi(c), ctx: ctx}, nil
+}
+
 // NewRUMCommand returns the rum cobra command group.
 func NewRUMCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -53,6 +67,7 @@ func NewRUMCommand() *cobra.Command {
 	cmd.AddCommand(newRUMAggregateCmd(defaultRUMAPI))
 	cmd.AddCommand(newRUMAppCmd(defaultRUMAPI))
 	cmd.AddCommand(newRUMMetricCmd(defaultRUMMetricsAPI))
+	cmd.AddCommand(newRUMRetentionFilterCmd(defaultRUMRetentionFiltersAPI))
 	return cmd
 }
 
@@ -893,6 +908,318 @@ func newRUMMetricDeleteCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command 
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
+}
+
+func newRUMRetentionFilterCmd(mkAPI func() (*rumRetentionFiltersAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "retention-filter",
+		Short: "Manage RUM retention filters",
+	}
+	cmd.AddCommand(newRUMRetentionFilterListCmd(mkAPI))
+	cmd.AddCommand(newRUMRetentionFilterShowCmd(mkAPI))
+	cmd.AddCommand(newRUMRetentionFilterCreateCmd(mkAPI))
+	cmd.AddCommand(newRUMRetentionFilterUpdateCmd(mkAPI))
+	cmd.AddCommand(newRUMRetentionFilterDeleteCmd(mkAPI))
+	return cmd
+}
+
+func newRUMRetentionFilterListCmd(mkAPI func() (*rumRetentionFiltersAPI, error)) *cobra.Command {
+	var appID string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List RUM retention filters",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if appID == "" {
+				return fmt.Errorf("--app is required")
+			}
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := rapi.api.ListRetentionFilters(rapi.ctx, appID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list retention filters: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				data := resp.GetData()
+				if data == nil {
+					data = []datadogV2.RumRetentionFilterData{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"ID", "NAME", "EVENT TYPE", "SAMPLE RATE", "ENABLED"}
+			var rows [][]string
+			for _, f := range resp.GetData() {
+				attrs := f.GetAttributes()
+				enabled := fmt.Sprintf("%v", attrs.GetEnabled())
+				rows = append(rows, []string{
+					f.GetId(),
+					attrs.GetName(),
+					string(attrs.GetEventType()),
+					fmt.Sprintf("%g", attrs.GetSampleRate()),
+					enabled,
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&appID, "app", "", "RUM application ID (required)")
+	return cmd
+}
+
+func newRUMRetentionFilterShowCmd(mkAPI func() (*rumRetentionFiltersAPI, error)) *cobra.Command {
+	var appID string
+	cmd := &cobra.Command{
+		Use:   "show <filter-id>",
+		Short: "Show a RUM retention filter",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if appID == "" {
+				return fmt.Errorf("--app is required")
+			}
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := rapi.api.GetRetentionFilter(rapi.ctx, appID, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get retention filter: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			rf := resp.GetData()
+			attrs := rf.GetAttributes()
+			rows := [][]string{
+				{"ID", rf.GetId()},
+				{"NAME", attrs.GetName()},
+				{"EVENT TYPE", string(attrs.GetEventType())},
+				{"SAMPLE RATE", fmt.Sprintf("%g", attrs.GetSampleRate())},
+				{"ENABLED", fmt.Sprintf("%v", attrs.GetEnabled())},
+				{"QUERY", attrs.GetQuery()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&appID, "app", "", "RUM application ID (required)")
+	return cmd
+}
+
+func newRUMRetentionFilterCreateCmd(mkAPI func() (*rumRetentionFiltersAPI, error)) *cobra.Command {
+	var (
+		appID      string
+		name       string
+		eventType  string
+		sampleRate float64
+		query      string
+		enabled    bool
+	)
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a RUM retention filter",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if appID == "" {
+				return fmt.Errorf("--app is required")
+			}
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+
+			et, err := datadogV2.NewRumRetentionFilterEventTypeFromValue(eventType)
+			if err != nil {
+				return fmt.Errorf("--event-type: %w", err)
+			}
+
+			attrs := datadogV2.NewRumRetentionFilterCreateAttributes(*et, name, sampleRate)
+			if query != "" {
+				attrs.SetQuery(query)
+			}
+			if cmd.Flags().Changed("enabled") {
+				attrs.SetEnabled(enabled)
+			}
+
+			data := datadogV2.NewRumRetentionFilterCreateData(*attrs, datadogV2.RUMRETENTIONFILTERTYPE_RETENTION_FILTERS)
+			req := datadogV2.NewRumRetentionFilterCreateRequest(*data)
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := rapi.api.CreateRetentionFilter(rapi.ctx, appID, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create retention filter: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			rf := resp.GetData()
+			rfAttrs := rf.GetAttributes()
+			rows := [][]string{
+				{"ID", rf.GetId()},
+				{"NAME", rfAttrs.GetName()},
+				{"EVENT TYPE", string(rfAttrs.GetEventType())},
+				{"SAMPLE RATE", fmt.Sprintf("%g", rfAttrs.GetSampleRate())},
+				{"ENABLED", fmt.Sprintf("%v", rfAttrs.GetEnabled())},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&appID, "app", "", "RUM application ID (required)")
+	cmd.Flags().StringVar(&name, "name", "", "filter name (required)")
+	cmd.Flags().StringVar(&eventType, "event-type", "view", "RUM event type: session, view, action, error, resource, long_task, vital")
+	cmd.Flags().Float64Var(&sampleRate, "sample-rate", 100, "sample rate (0.1-100)")
+	cmd.Flags().StringVar(&query, "query", "", "filter query")
+	cmd.Flags().BoolVar(&enabled, "enabled", true, "enable the filter")
+	return cmd
+}
+
+func newRUMRetentionFilterUpdateCmd(mkAPI func() (*rumRetentionFiltersAPI, error)) *cobra.Command {
+	var (
+		appID      string
+		name       string
+		eventType  string
+		sampleRate float64
+		query      string
+		enabled    bool
+	)
+	cmd := &cobra.Command{
+		Use:   "update <filter-id>",
+		Short: "Update a RUM retention filter",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if appID == "" {
+				return fmt.Errorf("--app is required")
+			}
+			rfID := args[0]
+
+			attrs := datadogV2.NewRumRetentionFilterUpdateAttributes()
+			if name != "" {
+				attrs.SetName(name)
+			}
+			if eventType != "" {
+				et, err := datadogV2.NewRumRetentionFilterEventTypeFromValue(eventType)
+				if err != nil {
+					return fmt.Errorf("--event-type: %w", err)
+				}
+				attrs.SetEventType(*et)
+			}
+			if cmd.Flags().Changed("sample-rate") {
+				attrs.SetSampleRate(sampleRate)
+			}
+			if query != "" {
+				attrs.SetQuery(query)
+			}
+			if cmd.Flags().Changed("enabled") {
+				attrs.SetEnabled(enabled)
+			}
+
+			data := datadogV2.NewRumRetentionFilterUpdateData(*attrs, rfID, datadogV2.RUMRETENTIONFILTERTYPE_RETENTION_FILTERS)
+			req := datadogV2.NewRumRetentionFilterUpdateRequest(*data)
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := rapi.api.UpdateRetentionFilter(rapi.ctx, appID, rfID, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update retention filter: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			rf := resp.GetData()
+			rfAttrs := rf.GetAttributes()
+			rows := [][]string{
+				{"ID", rf.GetId()},
+				{"NAME", rfAttrs.GetName()},
+				{"EVENT TYPE", string(rfAttrs.GetEventType())},
+				{"SAMPLE RATE", fmt.Sprintf("%g", rfAttrs.GetSampleRate())},
+				{"ENABLED", fmt.Sprintf("%v", rfAttrs.GetEnabled())},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&appID, "app", "", "RUM application ID (required)")
+	cmd.Flags().StringVar(&name, "name", "", "new filter name")
+	cmd.Flags().StringVar(&eventType, "event-type", "", "new RUM event type")
+	cmd.Flags().Float64Var(&sampleRate, "sample-rate", 0, "new sample rate (0.1-100)")
+	cmd.Flags().StringVar(&query, "query", "", "new filter query")
+	cmd.Flags().BoolVar(&enabled, "enabled", true, "enable or disable the filter")
+	return cmd
+}
+
+func newRUMRetentionFilterDeleteCmd(mkAPI func() (*rumRetentionFiltersAPI, error)) *cobra.Command {
+	var (
+		appID string
+		yes   bool
+	)
+	cmd := &cobra.Command{
+		Use:   "delete <filter-id>",
+		Short: "Delete a RUM retention filter",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if appID == "" {
+				return fmt.Errorf("--app is required")
+			}
+			if !yes {
+				return fmt.Errorf("requires --yes flag to confirm deletion")
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			httpResp, err := rapi.api.DeleteRetentionFilter(rapi.ctx, appID, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete retention filter: %w", err)
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "deleted")
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&appID, "app", "", "RUM application ID (required)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
 }

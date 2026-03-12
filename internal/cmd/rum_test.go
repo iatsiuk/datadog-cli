@@ -802,3 +802,244 @@ func TestRUMMetricDeleteWithYes(t *testing.T) {
 		t.Error("expected DELETE request to be made")
 	}
 }
+
+// rum retention-filter tests
+
+const mockRUMRetentionFiltersListResponse = `{
+	"data": [{
+		"id": "rf-id-1",
+		"type": "retention_filters",
+		"attributes": {
+			"name": "Keep Errors",
+			"event_type": "error",
+			"sample_rate": 100,
+			"enabled": true,
+			"query": "@error.type:*"
+		}
+	}]
+}`
+
+const mockRUMRetentionFilterResponse = `{
+	"data": {
+		"id": "rf-id-1",
+		"type": "retention_filters",
+		"attributes": {
+			"name": "Keep Errors",
+			"event_type": "error",
+			"sample_rate": 100,
+			"enabled": true,
+			"query": "@error.type:*"
+		}
+	}
+}`
+
+func newTestRUMRetentionFiltersAPI(srv *httptest.Server) func() (*rumRetentionFiltersAPI, error) {
+	return func() (*rumRetentionFiltersAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &rumRetentionFiltersAPI{api: datadogV2.NewRumRetentionFiltersApi(c), ctx: apiCtx}, nil
+	}
+}
+
+func buildRUMRetentionFilterCmd(mkAPI func() (*rumRetentionFiltersAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	rum := &cobra.Command{Use: "rum"}
+	rum.AddCommand(newRUMRetentionFilterCmd(mkAPI))
+	root.AddCommand(rum)
+	return root, buf
+}
+
+func TestRUMRetentionFilterListTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMRetentionFiltersListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMRetentionFilterCmd(newTestRUMRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"rum", "retention-filter", "list", "--app", "app-id-1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "NAME", "EVENT TYPE", "SAMPLE RATE", "ENABLED",
+		"rf-id-1", "Keep Errors", "error", "100", "true"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMRetentionFilterListRequiresApp(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMRetentionFiltersListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMRetentionFilterCmd(newTestRUMRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"rum", "retention-filter", "list"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --app flag")
+	}
+}
+
+func TestRUMRetentionFilterShowTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMRetentionFilterResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMRetentionFilterCmd(newTestRUMRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"rum", "retention-filter", "show", "--app", "app-id-1", "rf-id-1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"rf-id-1", "Keep Errors", "error", "100", "true", "@error.type:*"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMRetentionFilterCreateFlags(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMRetentionFilterResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMRetentionFilterCmd(newTestRUMRetentionFiltersAPI(srv))
+	root.SetArgs([]string{
+		"rum", "retention-filter", "create",
+		"--app", "app-id-1",
+		"--name", "Keep Errors",
+		"--event-type", "error",
+		"--sample-rate", "100",
+		"--query", "@error.type:*",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var req map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	data, _ := req["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["name"]; got != "Keep Errors" {
+		t.Errorf("name = %v, want Keep Errors", got)
+	}
+	if got := attrs["event_type"]; got != "error" {
+		t.Errorf("event_type = %v, want error", got)
+	}
+	if got := attrs["sample_rate"]; got != float64(100) {
+		t.Errorf("sample_rate = %v, want 100", got)
+	}
+	if got := attrs["query"]; got != "@error.type:*" {
+		t.Errorf("query = %v, want @error.type:*", got)
+	}
+}
+
+func TestRUMRetentionFilterUpdateFlags(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMRetentionFilterResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMRetentionFilterCmd(newTestRUMRetentionFiltersAPI(srv))
+	root.SetArgs([]string{
+		"rum", "retention-filter", "update", "rf-id-1",
+		"--app", "app-id-1",
+		"--name", "Updated Filter",
+		"--sample-rate", "50",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var req map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	data, _ := req["data"].(map[string]interface{})
+	if got := data["id"]; got != "rf-id-1" {
+		t.Errorf("id = %v, want rf-id-1", got)
+	}
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["name"]; got != "Updated Filter" {
+		t.Errorf("name = %v, want Updated Filter", got)
+	}
+	if got := attrs["sample_rate"]; got != float64(50) {
+		t.Errorf("sample_rate = %v, want 50", got)
+	}
+}
+
+func TestRUMRetentionFilterDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMRetentionFilterCmd(newTestRUMRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"rum", "retention-filter", "delete", "--app", "app-id-1", "rf-id-1"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --yes flag")
+	}
+}
+
+func TestRUMRetentionFilterDeleteWithYes(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMRetentionFilterCmd(newTestRUMRetentionFiltersAPI(srv))
+	root.SetArgs([]string{"rum", "retention-filter", "delete", "--app", "app-id-1", "rf-id-1", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !called {
+		t.Error("expected DELETE request to be made")
+	}
+}
