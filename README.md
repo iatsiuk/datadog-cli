@@ -217,6 +217,35 @@ Search output columns: `TIMESTAMP | TYPE | APPLICATION | VIEW | DURATION`
 Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
 Default `--from` is `now-15m`, default `--to` is `now`.
 
+### dashboards
+
+Manage Datadog dashboards and dashboard lists.
+
+```
+datadog-cli dashboards list
+datadog-cli dashboards show --id <id>
+datadog-cli dashboards create --title <title> --layout-type <ordered|free> [--description <text>] [--tags <tag,...>] [--widgets-json <json>]
+datadog-cli dashboards update --id <id> --title <title> --layout-type <ordered|free> [--description <text>] [--tags <tag,...>] [--widgets-json <json>]
+datadog-cli dashboards update --id <id> --body <json>
+datadog-cli dashboards delete --id <id> --yes
+datadog-cli dashboards lists list
+datadog-cli dashboards lists show --id <id>
+datadog-cli dashboards lists create --name <name>
+datadog-cli dashboards lists update --id <id> --name <name>
+datadog-cli dashboards lists delete --id <id> --yes
+datadog-cli dashboards lists add-items --id <list-id> --dashboard <dash-id> --type <type>
+datadog-cli dashboards lists remove-items --id <list-id> --dashboard <dash-id> --type <type>
+```
+
+Dashboards list output columns: `ID | TITLE | LAYOUT | URL | CREATED | MODIFIED`
+Dashboard lists list output columns: `ID | NAME | COUNT | CREATED | MODIFIED`
+
+`--layout-type` accepts: `ordered` (grid-based), `free` (pixel-positioned)
+`--tags` accepts a single comma-separated string (e.g. `--tags team:infra,env:prod`)
+`--widgets-json` accepts an inline JSON array of widget objects
+`--body` accepts a full dashboard JSON (replaces all individual flags)
+`--type` for list items accepts: `custom_timeboard`, `custom_screenboard`, `integration_timeboard`, `integration_screenboard`, `host_timeboard`
+
 ### events
 
 Search, view, create, and tail Datadog events.
