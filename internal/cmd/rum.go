@@ -539,11 +539,6 @@ func newRUMAppCreateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
 				return fmt.Errorf("--name is required")
 			}
 
-			rapi, err := mkAPI()
-			if err != nil {
-				return err
-			}
-
 			validAppTypes := map[string]bool{
 				"browser": true, "ios": true, "android": true, "react-native": true,
 				"flutter": true, "roku": true, "electron": true, "unity": true,
@@ -551,6 +546,11 @@ func newRUMAppCreateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
 			}
 			if !validAppTypes[appType] {
 				return fmt.Errorf("invalid --type %q; valid types: browser, ios, android, react-native, flutter, roku, electron, unity, kotlin-multiplatform", appType)
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
 			}
 
 			attrs := datadogV2.NewRUMApplicationCreateAttributes(name)
