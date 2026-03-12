@@ -19,6 +19,7 @@ func NewRootCommand(version string) *cobra.Command {
 	root.AddCommand(NewHostsCommand())
 	root.AddCommand(NewLogsCommand())
 	root.AddCommand(NewMetricsCommand())
+	root.AddCommand(NewMonitorsCommand())
 	root.AddCommand(NewRUMCommand())
 	return root
 }
