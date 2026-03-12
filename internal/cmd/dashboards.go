@@ -16,6 +16,14 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
 
+func parseListID(s string) (int64, error) {
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid list id %q: %w", s, err)
+	}
+	return id, nil
+}
+
 type dashboardsAPI struct {
 	api *datadogV1.DashboardsApi
 	ctx context.Context
@@ -65,6 +73,201 @@ func newDashboardListsCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Comma
 		Short: "Manage dashboard lists",
 	}
 	cmd.AddCommand(newDashboardListsListCmd(mkAPI))
+	cmd.AddCommand(newDashboardListsShowCmd(mkAPI))
+	cmd.AddCommand(newDashboardListsCreateCmd(mkAPI))
+	cmd.AddCommand(newDashboardListsUpdateCmd(mkAPI))
+	cmd.AddCommand(newDashboardListsDeleteCmd(mkAPI))
+	return cmd
+}
+
+func newDashboardListsShowCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Command {
+	var id string
+	cmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show a dashboard list",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			listID, err := parseListID(id)
+			if err != nil {
+				return err
+			}
+
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := lapi.api.GetDashboardList(lapi.ctx, listID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get dashboard list: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			idStr := strconv.FormatInt(resp.GetId(), 10)
+			count := strconv.FormatInt(resp.GetDashboardCount(), 10)
+			created := ""
+			if t := resp.Created; t != nil {
+				created = t.UTC().Format("2006-01-02")
+			}
+			modified := ""
+			if t := resp.Modified; t != nil {
+				modified = t.UTC().Format("2006-01-02")
+			}
+			headers := []string{"ID", "NAME", "COUNT", "CREATED", "MODIFIED"}
+			rows := [][]string{{idStr, resp.GetName(), count, created, modified}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "dashboard list ID (required)")
+	return cmd
+}
+
+func newDashboardListsCreateCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Command {
+	var name string
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a dashboard list",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			body := datadogV1.DashboardList{Name: name}
+			resp, httpResp, err := lapi.api.CreateDashboardList(lapi.ctx, body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create dashboard list: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			idStr := strconv.FormatInt(resp.GetId(), 10)
+			headers := []string{"ID", "NAME"}
+			rows := [][]string{{idStr, resp.GetName()}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&name, "name", "", "dashboard list name (required)")
+	return cmd
+}
+
+func newDashboardListsUpdateCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Command {
+	var (
+		id   string
+		name string
+	)
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update a dashboard list",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+			listID, err := parseListID(id)
+			if err != nil {
+				return err
+			}
+
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			body := datadogV1.DashboardList{Name: name}
+			resp, httpResp, err := lapi.api.UpdateDashboardList(lapi.ctx, listID, body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update dashboard list: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			idStr := strconv.FormatInt(resp.GetId(), 10)
+			headers := []string{"ID", "NAME"}
+			rows := [][]string{{idStr, resp.GetName()}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "dashboard list ID (required)")
+	cmd.Flags().StringVar(&name, "name", "", "new name (required)")
+	return cmd
+}
+
+func newDashboardListsDeleteCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Command {
+	var (
+		id  string
+		yes bool
+	)
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete a dashboard list",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if !yes {
+				return fmt.Errorf("--yes is required to confirm deletion")
+			}
+			listID, err := parseListID(id)
+			if err != nil {
+				return err
+			}
+
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := lapi.api.DeleteDashboardList(lapi.ctx, listID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete dashboard list: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "deleted dashboard list: %d\n", resp.GetDeletedDashboardListId()) //nolint:errcheck
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "dashboard list ID (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
 }
 

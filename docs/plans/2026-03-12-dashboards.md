@@ -87,12 +87,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 8: Dashboard list show/create/update/delete with tests
-- [ ] write tests for `dashboards lists show --id <id>` -- list details with contained dashboards
-- [ ] write tests for `dashboards lists create --name <name>` -- capture request body
-- [ ] write tests for `dashboards lists update --id <id> --name <name>`
-- [ ] write tests for `dashboards lists delete --id <id> --yes`
-- [ ] implement show/create/update/delete subcommands for dashboard lists
-- [ ] run `make build` -- must pass
+- [x] write tests for `dashboards lists show --id <id>` -- list details with contained dashboards
+- [x] write tests for `dashboards lists create --name <name>` -- capture request body
+- [x] write tests for `dashboards lists update --id <id> --name <name>`
+- [x] write tests for `dashboards lists delete --id <id> --yes`
+- [x] implement show/create/update/delete subcommands for dashboard lists
+- [x] run `make build` -- must pass
 
 ### Task 9: Dashboard list items add/remove with tests
 - [ ] write tests for `dashboards lists add-items --id <list-id> --dashboard <dash-id> --type <type>`

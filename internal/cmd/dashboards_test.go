@@ -671,6 +671,282 @@ func TestDashboardsDeleteMissingYes(t *testing.T) {
 	}
 }
 
+func buildDashboardListsSubCmd(mkAPI func() (*dashboardListsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	dashboards := &cobra.Command{Use: "dashboards"}
+	lists := newDashboardListsCmd(mkAPI)
+	dashboards.AddCommand(lists)
+	root.AddCommand(dashboards)
+	return root, buf
+}
+
+const mockDashboardListShowResponse = `{
+	"id": 42,
+	"name": "My List",
+	"dashboard_count": 3,
+	"created": "2024-01-15T10:00:00.000Z",
+	"modified": "2024-01-20T15:30:00.000Z"
+}`
+
+func TestDashboardListsShowTableOutput(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardListShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "show", "--id", "42"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "42") {
+		t.Errorf("request path %q missing list id", capturedPath)
+	}
+	out := buf.String()
+	for _, want := range []string{"ID", "NAME", "COUNT", "CREATED", "MODIFIED", "42", "My List", "3"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDashboardListsShowJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardListShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "show", "--id", "42", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["name"] != "My List" {
+		t.Errorf("got name %q, want %q", result["name"], "My List")
+	}
+}
+
+func TestDashboardListsShowMissingID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "show"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --id is missing")
+	}
+	if !strings.Contains(err.Error(), "--id is required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+const mockDashboardListCreateResponse = `{
+	"id": 99,
+	"name": "New List"
+}`
+
+func TestDashboardListsCreateRequestBody(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := new(bytes.Buffer)
+		b.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = b.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardListCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "create", "--name", "New List"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	if body["name"] != "New List" {
+		t.Errorf("request body name = %q, want %q", body["name"], "New List")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "99") {
+		t.Errorf("output missing created list id:\n%s", out)
+	}
+}
+
+func TestDashboardListsCreateMissingName(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "create"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --name is missing")
+	}
+	if !strings.Contains(err.Error(), "--name is required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+const mockDashboardListUpdateResponse = `{
+	"id": 42,
+	"name": "Updated List"
+}`
+
+func TestDashboardListsUpdateRequestBody(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		b := new(bytes.Buffer)
+		b.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = b.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardListUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "update", "--id", "42", "--name", "Updated List"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(capturedPath, "42") {
+		t.Errorf("request path %q missing list id", capturedPath)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	if body["name"] != "Updated List" {
+		t.Errorf("request body name = %q, want %q", body["name"], "Updated List")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Updated List") {
+		t.Errorf("output missing updated name:\n%s", out)
+	}
+}
+
+func TestDashboardListsUpdateMissingFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "missing id",
+			args:    []string{"dashboards", "lists", "update", "--name", "Test"},
+			wantErr: "--id is required",
+		},
+		{
+			name:    "missing name",
+			args:    []string{"dashboards", "lists", "update", "--id", "42"},
+			wantErr: "--name is required",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+			root.SetArgs(tc.args)
+			err := root.Execute()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q missing %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestDashboardListsDeleteSuccess(t *testing.T) {
+	t.Parallel()
+
+	var capturedPath string
+	var capturedMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedPath = r.URL.Path
+		capturedMethod = r.Method
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"deleted_dashboard_list_id":42}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "delete", "--id", "42", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if capturedMethod != http.MethodDelete {
+		t.Errorf("method = %q, want DELETE", capturedMethod)
+	}
+	if !strings.Contains(capturedPath, "42") {
+		t.Errorf("request path %q missing list id", capturedPath)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "42") {
+		t.Errorf("output missing deleted id:\n%s", out)
+	}
+}
+
+func TestDashboardListsDeleteMissingYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "delete", "--id", "42"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --yes is missing")
+	}
+	if !strings.Contains(err.Error(), "--yes") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestDashboardsCreateMissingRequiredFlags(t *testing.T) {
 	t.Parallel()
 
