@@ -15,6 +15,135 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func newTestDashboardListsAPI(srv *httptest.Server) func() (*dashboardListsAPI, error) {
+	return func() (*dashboardListsAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		ctx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &dashboardListsAPI{api: datadogV1.NewDashboardListsApi(c), ctx: ctx}, nil
+	}
+}
+
+func buildDashboardListsListCmd(mkAPI func() (*dashboardListsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	dashboards := &cobra.Command{Use: "dashboards"}
+	lists := newDashboardListsCmd(mkAPI)
+	dashboards.AddCommand(lists)
+	root.AddCommand(dashboards)
+	return root, buf
+}
+
+const mockDashboardListsListResponse = `{
+	"dashboard_lists": [
+		{
+			"id": 42,
+			"name": "My List",
+			"dashboard_count": 3,
+			"created": "2024-01-15T10:00:00.000Z",
+			"modified": "2024-01-20T15:30:00.000Z"
+		}
+	]
+}`
+
+func TestDashboardListsListTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardListsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardListsListCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "NAME", "COUNT", "CREATED", "MODIFIED", "42", "My List", "3"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDashboardListsListJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardListsListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardListsListCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "list", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d entries, want 1", len(result))
+	}
+}
+
+func TestDashboardListsListEmpty(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"dashboard_lists":[]}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardListsListCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "ID") {
+		t.Errorf("output missing headers:\n%s", out)
+	}
+}
+
+func TestNewTestDashboardListsAPI(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	mkAPI := newTestDashboardListsAPI(srv)
+	api, err := mkAPI()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if api == nil {
+		t.Fatal("expected non-nil api")
+	}
+	if api.api == nil {
+		t.Fatal("expected non-nil api.api")
+	}
+}
+
 const mockDashboardShowResponse = `{
 	"id": "abc-123",
 	"title": "My Dashboard",

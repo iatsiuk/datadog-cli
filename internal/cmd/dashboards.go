@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
@@ -29,6 +30,20 @@ func defaultDashboardsAPI() (*dashboardsAPI, error) {
 	return &dashboardsAPI{api: datadogV1.NewDashboardsApi(c), ctx: ctx}, nil
 }
 
+type dashboardListsAPI struct {
+	api *datadogV1.DashboardListsApi
+	ctx context.Context
+}
+
+func defaultDashboardListsAPI() (*dashboardListsAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &dashboardListsAPI{api: datadogV1.NewDashboardListsApi(c), ctx: ctx}, nil
+}
+
 // NewDashboardsCommand returns the dashboards cobra command group.
 func NewDashboardsCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -40,6 +55,69 @@ func NewDashboardsCommand() *cobra.Command {
 	cmd.AddCommand(newDashboardsCreateCmd(defaultDashboardsAPI))
 	cmd.AddCommand(newDashboardsUpdateCmd(defaultDashboardsAPI))
 	cmd.AddCommand(newDashboardsDeleteCmd(defaultDashboardsAPI))
+	cmd.AddCommand(newDashboardListsCmd(defaultDashboardListsAPI))
+	return cmd
+}
+
+func newDashboardListsCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "lists",
+		Short: "Manage dashboard lists",
+	}
+	cmd.AddCommand(newDashboardListsListCmd(mkAPI))
+	return cmd
+}
+
+func newDashboardListsListCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List dashboard lists",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := lapi.api.ListDashboardLists(lapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list dashboard lists: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			lists := resp.GetDashboardLists()
+			if asJSON {
+				if lists == nil {
+					lists = []datadogV1.DashboardList{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), lists)
+			}
+
+			headers := []string{"ID", "NAME", "COUNT", "CREATED", "MODIFIED"}
+			var rows [][]string
+			for _, l := range lists {
+				id := strconv.FormatInt(l.GetId(), 10)
+				name := l.GetName()
+				count := strconv.FormatInt(l.GetDashboardCount(), 10)
+				created := ""
+				if t := l.Created; t != nil {
+					created = t.UTC().Format("2006-01-02")
+				}
+				modified := ""
+				if t := l.Modified; t != nil {
+					modified = t.UTC().Format("2006-01-02")
+				}
+				rows = append(rows, []string{id, name, count, created, modified})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
 	return cmd
 }
 

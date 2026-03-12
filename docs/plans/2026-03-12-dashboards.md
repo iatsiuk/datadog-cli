@@ -79,12 +79,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 7: Dashboard Lists API wrapper and list with tests
-- [ ] write tests for `newTestDashboardListsAPI` helper
-- [ ] write tests for `dashboards lists list` -- table output (id, name, dashboard_count, created, modified)
-- [ ] write tests for `dashboards lists list` -- JSON output
-- [ ] implement `dashboardListsAPI` struct wrapping `datadogV2.DashboardListsApi`
-- [ ] implement `newDashboardListsListCmd`
-- [ ] run `make build` -- must pass
+- [x] write tests for `newTestDashboardListsAPI` helper
+- [x] write tests for `dashboards lists list` -- table output (id, name, dashboard_count, created, modified)
+- [x] write tests for `dashboards lists list` -- JSON output
+- [x] implement `dashboardListsAPI` struct wrapping `datadogV2.DashboardListsApi`
+- [x] implement `newDashboardListsListCmd`
+- [x] run `make build` -- must pass
 
 ### Task 8: Dashboard list show/create/update/delete with tests
 - [ ] write tests for `dashboards lists show --id <id>` -- list details with contained dashboards
