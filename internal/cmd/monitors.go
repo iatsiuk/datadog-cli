@@ -40,6 +40,7 @@ func NewMonitorsCommand() *cobra.Command {
 	cmd.AddCommand(newMonitorsSearchCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsCreateCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsUpdateCmd(defaultMonitorsAPI))
+	cmd.AddCommand(newMonitorsDeleteCmd(defaultMonitorsAPI))
 	return cmd
 }
 
@@ -187,6 +188,7 @@ var (
 	errMonitorNameRequired  = errors.New("--name is required")
 	errMonitorTypeRequired  = errors.New("--type is required")
 	errMonitorQueryRequired = errors.New("--query is required")
+	errYesRequired          = errors.New("--yes is required to confirm destructive action")
 )
 
 func newMonitorsShowCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
@@ -449,5 +451,45 @@ func newMonitorsUpdateCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&tagsStr, "tags", "", "comma-separated tags")
 	cmd.Flags().Int64Var(&priority, "priority", 0, "priority 1 (high) to 5 (low)")
 	cmd.Flags().StringVar(&thresholds, "thresholds", "", "thresholds as JSON")
+	return cmd
+}
+
+func newMonitorsDeleteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
+	var (
+		monitorID int64
+		yes       bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete a monitor",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if monitorID == 0 {
+				return errMonitorIDRequired
+			}
+			if !yes {
+				return errYesRequired
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			_, httpResp, err := mapi.api.DeleteMonitor(mapi.ctx, monitorID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete monitor: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "deleted monitor %d\n", monitorID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().Int64Var(&monitorID, "id", 0, "monitor ID (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
 }

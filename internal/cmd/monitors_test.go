@@ -552,6 +552,61 @@ func TestMonitorsUpdate_MissingID(t *testing.T) {
 	}
 }
 
+func buildMonitorsDeleteCmd(mkAPI func() (*monitorsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	monitors := &cobra.Command{Use: "monitors"}
+	monitors.AddCommand(newMonitorsDeleteCmd(mkAPI))
+	root.AddCommand(monitors)
+	return root, buf
+}
+
+func TestMonitorsDelete_Success(t *testing.T) {
+	t.Parallel()
+	var capturedMethod string
+	var capturedPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedMethod = r.Method
+		capturedPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "{}") //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMonitorsDeleteCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "delete", "--id", "12345", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if capturedMethod != http.MethodDelete {
+		t.Errorf("method = %q, want DELETE", capturedMethod)
+	}
+	if !strings.Contains(capturedPath, "12345") {
+		t.Errorf("path %q does not contain monitor ID", capturedPath)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "12345") {
+		t.Errorf("output missing monitor ID\nfull output:\n%s", out)
+	}
+}
+
+func TestMonitorsDelete_MissingYes(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildMonitorsDeleteCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "delete", "--id", "12345"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --yes is missing")
+	}
+}
+
 func TestMonitorsSearch_Pagination(t *testing.T) {
 	t.Parallel()
 	var capturedPage, capturedPerPage string
