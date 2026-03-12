@@ -72,6 +72,20 @@ func defaultRUMPlaylistsAPI() (*rumPlaylistsAPI, error) {
 	return &rumPlaylistsAPI{api: datadogV2.NewRumReplayPlaylistsApi(c), ctx: ctx}, nil
 }
 
+type rumHeatmapsAPI struct {
+	api *datadogV2.RumReplayHeatmapsApi
+	ctx context.Context
+}
+
+func defaultRUMHeatmapsAPI() (*rumHeatmapsAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &rumHeatmapsAPI{api: datadogV2.NewRumReplayHeatmapsApi(c), ctx: ctx}, nil
+}
+
 // NewRUMCommand returns the rum cobra command group.
 func NewRUMCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -84,6 +98,7 @@ func NewRUMCommand() *cobra.Command {
 	cmd.AddCommand(newRUMMetricCmd(defaultRUMMetricsAPI))
 	cmd.AddCommand(newRUMRetentionFilterCmd(defaultRUMRetentionFiltersAPI))
 	cmd.AddCommand(newRUMPlaylistCmd(defaultRUMPlaylistsAPI))
+	cmd.AddCommand(newRUMHeatmapCmd(defaultRUMHeatmapsAPI))
 	return cmd
 }
 
@@ -1654,6 +1669,265 @@ func parsePlaylistID(s string) (int32, error) {
 		return 0, fmt.Errorf("invalid playlist id %q: must be an integer", s)
 	}
 	return int32(n), nil //nolint:gosec
+}
+
+func newRUMHeatmapCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "heatmap",
+		Short: "Manage RUM replay heatmap snapshots",
+	}
+	cmd.AddCommand(newRUMHeatmapListCmd(mkAPI))
+	cmd.AddCommand(newRUMHeatmapCreateCmd(mkAPI))
+	cmd.AddCommand(newRUMHeatmapUpdateCmd(mkAPI))
+	cmd.AddCommand(newRUMHeatmapDeleteCmd(mkAPI))
+	return cmd
+}
+
+func newRUMHeatmapListCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Command {
+	var view string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List RUM replay heatmap snapshots",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if view == "" {
+				return fmt.Errorf("--view is required")
+			}
+			hapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := hapi.api.ListReplayHeatmapSnapshots(hapi.ctx, view)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list heatmaps: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				data := resp.GetData()
+				if data == nil {
+					data = []datadogV2.SnapshotData{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"ID", "VIEW", "DEVICE", "CREATED AT"}
+			var rows [][]string
+			for _, s := range resp.GetData() {
+				id := ""
+				if s.Id != nil {
+					id = *s.Id
+				}
+				a := s.GetAttributes()
+				rows = append(rows, []string{
+					id,
+					a.GetViewName(),
+					a.GetDeviceType(),
+					a.GetCreatedAt().Format(time.RFC3339),
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	cmd.Flags().StringVar(&view, "view", "", "view name to filter by (required)")
+	return cmd
+}
+
+func newRUMHeatmapCreateCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Command {
+	var (
+		appID      string
+		deviceType string
+		eventID    string
+		name       string
+		start      int64
+		viewName   string
+		sessionID  string
+		viewID     string
+	)
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a RUM replay heatmap snapshot",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			for flag, val := range map[string]string{
+				"--app":    appID,
+				"--device": deviceType,
+				"--event":  eventID,
+				"--name":   name,
+				"--view":   viewName,
+			} {
+				if val == "" {
+					return fmt.Errorf("%s is required", flag)
+				}
+			}
+			if start == 0 {
+				return fmt.Errorf("--start is required")
+			}
+
+			attrs := datadogV2.NewSnapshotCreateRequestDataAttributes(appID, deviceType, eventID, false, name, start, viewName)
+			if sessionID != "" {
+				attrs.SetSessionId(sessionID)
+			}
+			if viewID != "" {
+				attrs.SetViewId(viewID)
+			}
+			data := datadogV2.NewSnapshotCreateRequestDataWithDefaults()
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewSnapshotCreateRequest(*data)
+
+			hapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := hapi.api.CreateReplayHeatmapSnapshot(hapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create heatmap: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			d := resp.GetData()
+			a := d.GetAttributes()
+			id := ""
+			if d.Id != nil {
+				id = *d.Id
+			}
+			rows := [][]string{
+				{"ID", id},
+				{"VIEW", a.GetViewName()},
+				{"DEVICE", a.GetDeviceType()},
+				{"CREATED AT", a.GetCreatedAt().Format(time.RFC3339)},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&appID, "app", "", "application ID (required)")
+	cmd.Flags().StringVar(&deviceType, "device", "", "device type (required)")
+	cmd.Flags().StringVar(&eventID, "event", "", "event ID (required)")
+	cmd.Flags().StringVar(&name, "name", "", "snapshot name (required)")
+	cmd.Flags().Int64Var(&start, "start", 0, "start timestamp in ms (required)")
+	cmd.Flags().StringVar(&viewName, "view", "", "view name (required)")
+	cmd.Flags().StringVar(&sessionID, "session", "", "session ID")
+	cmd.Flags().StringVar(&viewID, "view-id", "", "view ID")
+	return cmd
+}
+
+func newRUMHeatmapUpdateCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Command {
+	var (
+		eventID   string
+		start     int64
+		sessionID string
+		viewID    string
+	)
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update a RUM replay heatmap snapshot",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			snapshotID := args[0]
+			if eventID == "" {
+				return fmt.Errorf("--event is required")
+			}
+			if start == 0 {
+				return fmt.Errorf("--start is required")
+			}
+
+			attrs := datadogV2.NewSnapshotUpdateRequestDataAttributes(eventID, false, start)
+			if sessionID != "" {
+				attrs.SetSessionId(sessionID)
+			}
+			if viewID != "" {
+				attrs.SetViewId(viewID)
+			}
+			data := datadogV2.NewSnapshotUpdateRequestDataWithDefaults()
+			data.SetId(snapshotID)
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewSnapshotUpdateRequest(*data)
+
+			hapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := hapi.api.UpdateReplayHeatmapSnapshot(hapi.ctx, snapshotID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update heatmap: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			d := resp.GetData()
+			a := d.GetAttributes()
+			id := ""
+			if d.Id != nil {
+				id = *d.Id
+			}
+			rows := [][]string{
+				{"ID", id},
+				{"VIEW", a.GetViewName()},
+				{"DEVICE", a.GetDeviceType()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&eventID, "event", "", "event ID (required)")
+	cmd.Flags().Int64Var(&start, "start", 0, "start timestamp in ms (required)")
+	cmd.Flags().StringVar(&sessionID, "session", "", "session ID")
+	cmd.Flags().StringVar(&viewID, "view-id", "", "view ID")
+	return cmd
+}
+
+func newRUMHeatmapDeleteCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Command {
+	var yes bool
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete a RUM replay heatmap snapshot",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return fmt.Errorf("pass --yes to confirm deletion")
+			}
+			snapshotID := args[0]
+
+			hapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			httpResp, err := hapi.api.DeleteReplayHeatmapSnapshot(hapi.ctx, snapshotID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete heatmap: %w", err)
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "deleted")
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
 }
 
 // parseRUMMetricComputeSpec parses "count" or "sum:@metric.path" into aggregation type and path.

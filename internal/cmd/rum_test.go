@@ -1380,3 +1380,257 @@ func TestRUMPlaylistRemoveSession(t *testing.T) {
 		t.Errorf("output missing 'removed':\n%s", buf.String())
 	}
 }
+
+// --- heatmap tests ---
+
+const mockHeatmapListResponse = `{
+	"data": [
+		{
+			"id": "snap-1",
+			"type": "snapshots",
+			"attributes": {
+				"application_id": "app-abc",
+				"view_name": "/home",
+				"device_type": "desktop",
+				"snapshot_name": "Home snapshot",
+				"created_at": "2024-01-15T10:00:00Z"
+			}
+		}
+	]
+}`
+
+const mockHeatmapResponse = `{
+	"data": {
+		"id": "snap-1",
+		"type": "snapshots",
+		"attributes": {
+			"application_id": "app-abc",
+			"view_name": "/home",
+			"device_type": "desktop",
+			"snapshot_name": "Home snapshot",
+			"created_at": "2024-01-15T10:00:00Z"
+		}
+	}
+}`
+
+func newTestRUMHeatmapsAPI(srv *httptest.Server) func() (*rumHeatmapsAPI, error) {
+	return func() (*rumHeatmapsAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &rumHeatmapsAPI{api: datadogV2.NewRumReplayHeatmapsApi(c), ctx: apiCtx}, nil
+	}
+}
+
+func buildRUMHeatmapCmd(mkAPI func() (*rumHeatmapsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	rum := &cobra.Command{Use: "rum"}
+	rum.AddCommand(newRUMHeatmapCmd(mkAPI))
+	root.AddCommand(rum)
+	return root, buf
+}
+
+func TestRUMHeatmapListTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHeatmapListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{"rum", "heatmap", "list", "--view", "/home"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "VIEW", "DEVICE", "snap-1", "/home", "desktop"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMHeatmapListRequiresView(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{"rum", "heatmap", "list"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --view flag")
+	}
+}
+
+func TestRUMHeatmapListJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHeatmapListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{"rum", "heatmap", "list", "--view", "/home", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d entries, want 1", len(result))
+	}
+}
+
+func TestRUMHeatmapCreate(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHeatmapResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{
+		"rum", "heatmap", "create",
+		"--app", "app-abc",
+		"--device", "desktop",
+		"--event", "evt-1",
+		"--name", "Home snapshot",
+		"--start", "1700000000000",
+		"--view", "/home",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(string(capturedBody), "app-abc") {
+		t.Errorf("request body missing app id: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "snap-1") {
+		t.Errorf("output missing snapshot id:\n%s", buf.String())
+	}
+}
+
+func TestRUMHeatmapCreateRequiresFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{"rum", "heatmap", "create", "--app", "app-abc"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error with missing required flags")
+	}
+}
+
+func TestRUMHeatmapUpdate(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHeatmapResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{
+		"rum", "heatmap", "update", "snap-1",
+		"--event", "evt-2",
+		"--start", "1700000000000",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(string(capturedBody), "evt-2") {
+		t.Errorf("request body missing event id: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "snap-1") {
+		t.Errorf("output missing snapshot id:\n%s", buf.String())
+	}
+}
+
+func TestRUMHeatmapUpdateRequiresFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{"rum", "heatmap", "update", "snap-1"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error with missing required flags")
+	}
+}
+
+func TestRUMHeatmapDelete(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{"rum", "heatmap", "delete", "snap-1", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !called {
+		t.Error("expected DELETE request to be made")
+	}
+	if !strings.Contains(buf.String(), "deleted") {
+		t.Errorf("output missing 'deleted':\n%s", buf.String())
+	}
+}
+
+func TestRUMHeatmapDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMHeatmapCmd(newTestRUMHeatmapsAPI(srv))
+	root.SetArgs([]string{"rum", "heatmap", "delete", "snap-1"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --yes flag")
+	}
+}
