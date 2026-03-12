@@ -570,6 +570,58 @@ func TestRUMAppUpdateFlags(t *testing.T) {
 	}
 }
 
+func TestRUMAppCreateInvalidType(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", "invalid"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid type")
+	}
+	if !strings.Contains(err.Error(), "invalid --type") {
+		t.Errorf("error %q does not mention invalid --type", err.Error())
+	}
+}
+
+func TestRUMAppCreateValidTypeBrowser(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", "browser"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestRUMAppCreateValidTypeIOS(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", "ios"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
 func TestRUMAppDeleteRequiresYes(t *testing.T) {
 	t.Parallel()
 

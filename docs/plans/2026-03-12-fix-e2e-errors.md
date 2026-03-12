@@ -42,13 +42,13 @@ Fix 2 bugs in CLI code identified during E2E testing:
 ### Task 2: Add client-side validation for rum app --type flag
 **Root cause**: `newRUMAppCreateCmd` passes any `--type` value to API without validation; API silently defaults to "browser".
 
-- [ ] write test: `rum app create --type invalid` returns error with list of valid types
-- [ ] write test: `rum app create --type browser` succeeds (valid type)
-- [ ] write test: `rum app create --type ios` succeeds (valid type)
-- [ ] implement validation: check `--type` against allowed values before API call
-- [ ] allowed types: browser, ios, android, react-native, flutter, roku, electron, unity, kotlin-multiplatform
-- [ ] run `go test -race ./internal/cmd/ -run TestRUMApp` -- must pass
-- [ ] run `make build` -- must pass
+- [x] write test: `rum app create --type invalid` returns error with list of valid types
+- [x] write test: `rum app create --type browser` succeeds (valid type)
+- [x] write test: `rum app create --type ios` succeeds (valid type)
+- [x] implement validation: check `--type` against allowed values before API call
+- [x] allowed types: browser, ios, android, react-native, flutter, roku, electron, unity, kotlin-multiplatform
+- [x] run `go test -race ./internal/cmd/ -run TestRUMApp` -- must pass
+- [x] run `make build` -- must pass
 
 ### Task 3: Verify acceptance criteria
 - [ ] verify both bugs are fixed
