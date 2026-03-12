@@ -37,13 +37,13 @@
 ## Implementation Steps
 
 ### Task 1: Dashboards API wrapper and command skeleton with tests
-- [ ] write tests for `newTestDashboardsAPI` helper (mock server creation)
-- [ ] write tests for `NewDashboardsCommand()` returning correct subcommands
-- [ ] implement `dashboardsAPI` struct wrapping `datadogV1.DashboardsApi` in `internal/cmd/dashboards.go`
-- [ ] implement `defaultDashboardsAPI()` with config loading and client creation
-- [ ] implement `NewDashboardsCommand()` with subcommand registration
-- [ ] register `NewDashboardsCommand()` in `root.go`
-- [ ] run `make build` -- must pass
+- [x] write tests for `newTestDashboardsAPI` helper (mock server creation)
+- [x] write tests for `NewDashboardsCommand()` returning correct subcommands
+- [x] implement `dashboardsAPI` struct wrapping `datadogV1.DashboardsApi` in `internal/cmd/dashboards.go`
+- [x] implement `defaultDashboardsAPI()` with config loading and client creation
+- [x] implement `NewDashboardsCommand()` with subcommand registration
+- [x] register `NewDashboardsCommand()` in `root.go`
+- [x] run `make build` -- must pass
 
 ### Task 2: Dashboard list with tests
 - [ ] write tests for `dashboards list` -- table output (id, title, layout_type, url, created_at, modified_at)
