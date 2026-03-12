@@ -462,7 +462,7 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 	cmd.Flags().StringVar(&layoutType, "layout-type", "", "layout type: ordered or free (required)")
 	cmd.Flags().StringVar(&description, "description", "", "dashboard description")
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags (e.g. team:infra,env:prod)")
-	cmd.Flags().StringVar(&widgetsJSON, "widgets-json", "", "widgets as JSON array (inline or @file)")
+	cmd.Flags().StringVar(&widgetsJSON, "widgets-json", "", "widgets as JSON array")
 	return cmd
 }
 

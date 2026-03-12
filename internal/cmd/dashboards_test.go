@@ -40,19 +40,6 @@ func newTestDashboardListsAPI(srv *httptest.Server) func() (*dashboardListsAPI, 
 	}
 }
 
-func buildDashboardListsListCmd(mkAPI func() (*dashboardListsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "datadog-cli"}
-	root.PersistentFlags().Bool("json", false, "output as JSON")
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(&bytes.Buffer{})
-	dashboards := &cobra.Command{Use: "dashboards"}
-	lists := newDashboardListsCmd(mkAPI)
-	dashboards.AddCommand(lists)
-	root.AddCommand(dashboards)
-	return root, buf
-}
-
 const mockDashboardListsListResponse = `{
 	"dashboard_lists": [
 		{
@@ -74,7 +61,7 @@ func TestDashboardListsListTableOutput(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	root, buf := buildDashboardListsListCmd(newTestDashboardListsAPI(srv))
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
 	root.SetArgs([]string{"dashboards", "lists", "list"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -97,7 +84,7 @@ func TestDashboardListsListJSONOutput(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	root, buf := buildDashboardListsListCmd(newTestDashboardListsAPI(srv))
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
 	root.SetArgs([]string{"dashboards", "lists", "list", "--json"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -121,7 +108,7 @@ func TestDashboardListsListEmpty(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	root, buf := buildDashboardListsListCmd(newTestDashboardListsAPI(srv))
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
 	root.SetArgs([]string{"dashboards", "lists", "list"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -130,24 +117,6 @@ func TestDashboardListsListEmpty(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "ID") {
 		t.Errorf("output missing headers:\n%s", out)
-	}
-}
-
-func TestNewTestDashboardListsAPI(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(nil)
-	defer srv.Close()
-
-	mkAPI := newTestDashboardListsAPI(srv)
-	api, err := mkAPI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if api == nil {
-		t.Fatal("expected non-nil api")
-	}
-	if api.api == nil {
-		t.Fatal("expected non-nil api.api")
 	}
 }
 
@@ -292,23 +261,15 @@ func TestNewDashboardsCommand_Subcommands(t *testing.T) {
 	if cmd.Use != "dashboards" {
 		t.Errorf("Use = %q, want %q", cmd.Use, "dashboards")
 	}
-}
-
-func TestNewTestDashboardsAPI(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(nil)
-	defer srv.Close()
-
-	mkAPI := newTestDashboardsAPI(srv)
-	api, err := mkAPI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	wantSubs := []string{"list", "show", "create", "update", "delete", "lists"}
+	got := make(map[string]bool)
+	for _, sub := range cmd.Commands() {
+		got[sub.Use] = true
 	}
-	if api == nil {
-		t.Fatal("expected non-nil api")
-	}
-	if api.api == nil {
-		t.Fatal("expected non-nil api.api")
+	for _, name := range wantSubs {
+		if !got[name] {
+			t.Errorf("missing subcommand %q", name)
+		}
 	}
 }
 
@@ -615,6 +576,40 @@ func TestDashboardsUpdateMissingID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--id is required") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestDashboardsUpdateInvalidBodyJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardsUpdateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "update", "--id", "abc-123", "--body", "{invalid"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid --body JSON")
+	}
+	if !strings.Contains(err.Error(), "parse --body") {
+		t.Errorf("error %q missing %q", err.Error(), "parse --body")
+	}
+}
+
+func TestDashboardsCreateInvalidWidgetsJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildDashboardsCreateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "create", "--title", "Test", "--layout-type", "ordered", "--widgets-json", "{invalid"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid --widgets-json")
+	}
+	if !strings.Contains(err.Error(), "parse --widgets-json") {
+		t.Errorf("error %q missing %q", err.Error(), "parse --widgets-json")
 	}
 }
 

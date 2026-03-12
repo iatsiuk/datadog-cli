@@ -237,9 +237,11 @@ datadog-cli dashboards lists add-items --id <list-id> --dashboard <dash-id> --ty
 datadog-cli dashboards lists remove-items --id <list-id> --dashboard <dash-id> --type <type>
 ```
 
-List output columns: `ID | TITLE | LAYOUT | URL | CREATED | MODIFIED`
+Dashboards list output columns: `ID | TITLE | LAYOUT | URL | CREATED | MODIFIED`
+Dashboard lists list output columns: `ID | NAME | COUNT | CREATED | MODIFIED`
 
 `--layout-type` accepts: `ordered` (grid-based), `free` (pixel-positioned)
+`--tags` accepts a single comma-separated string (e.g. `--tags team:infra,env:prod`)
 `--widgets-json` accepts an inline JSON array of widget objects
 `--body` accepts a full dashboard JSON (replaces all individual flags)
 `--type` for list items accepts: `custom_timeboard`, `custom_screenboard`, `integration_timeboard`, `integration_screenboard`, `host_timeboard`
