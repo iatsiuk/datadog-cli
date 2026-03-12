@@ -55,6 +55,8 @@ func NewHostsCommand() *cobra.Command {
 		Short: "Manage host tags",
 	}
 	tagsCmd.AddCommand(newTagsListCmd(defaultTagsAPI))
+	tagsCmd.AddCommand(newTagsShowCmd(defaultTagsAPI))
+	tagsCmd.AddCommand(newTagsCreateCmd(defaultTagsAPI))
 
 	cmd.AddCommand(newHostsListCmd(defaultHostsAPI))
 	cmd.AddCommand(newHostsTotalsCmd(defaultHostsAPI))
@@ -269,6 +271,111 @@ func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
 
 	cmd.Flags().StringVar(&filter, "filter", "", "filter hosts by name, alias, or tag")
 	cmd.Flags().Int64Var(&from, "from", 0, "only show hosts active since this Unix timestamp")
+	return cmd
+}
+
+func newTagsShowCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
+	var (
+		name   string
+		source string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show tags for a specific host",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			opts := datadogV1.NewGetHostTagsOptionalParameters()
+			if source != "" {
+				opts = opts.WithSource(source)
+			}
+
+			resp, httpResp, err := tapi.api.GetHostTags(tapi.ctx, name, *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get host tags: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"HOST", "TAGS"}
+			rows := [][]string{{resp.GetHost(), strings.Join(resp.GetTags(), ", ")}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "hostname to show tags for (required)")
+	cmd.Flags().StringVar(&source, "source", "", "filter tags by source (e.g. users, datadog, chef)")
+	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func newTagsCreateCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
+	var (
+		name   string
+		tags   string
+		source string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Add tags to a host",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			tagList := strings.Split(tags, ",")
+			body := datadogV1.NewHostTags()
+			body.SetTags(tagList)
+
+			opts := datadogV1.NewCreateHostTagsOptionalParameters()
+			if source != "" {
+				opts = opts.WithSource(source)
+			}
+
+			resp, httpResp, err := tapi.api.CreateHostTags(tapi.ctx, name, *body, *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create host tags: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"HOST", "TAGS"}
+			rows := [][]string{{resp.GetHost(), strings.Join(resp.GetTags(), ", ")}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "hostname to add tags to (required)")
+	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated list of tags (required)")
+	cmd.Flags().StringVar(&source, "source", "", "tag source (e.g. users, datadog, chef)")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("tags")
 	return cmd
 }
 

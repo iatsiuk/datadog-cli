@@ -475,6 +475,169 @@ func TestHostsUnmuteMissingName(t *testing.T) {
 	}
 }
 
+const mockTagsHostResponse = `{"host":"web-01","tags":["env:prod","role:frontend"]}`
+
+func buildTagsShowCmd(mkAPI func() (*tagsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	hosts := &cobra.Command{Use: "hosts"}
+	tagsCmd := &cobra.Command{Use: "tags"}
+	tagsCmd.AddCommand(newTagsShowCmd(mkAPI))
+	hosts.AddCommand(tagsCmd)
+	root.AddCommand(hosts)
+	return root, buf
+}
+
+func buildTagsCreateCmd(mkAPI func() (*tagsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	hosts := &cobra.Command{Use: "hosts"}
+	tagsCmd := &cobra.Command{Use: "tags"}
+	tagsCmd.AddCommand(newTagsCreateCmd(mkAPI))
+	hosts.AddCommand(tagsCmd)
+	root.AddCommand(hosts)
+	return root, buf
+}
+
+func TestTagsShowTable(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagsHostResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildTagsShowCmd(newTestTagsAPI(srv))
+	root.SetArgs([]string{"hosts", "tags", "show", "--name", "web-01"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "web-01") {
+		t.Errorf("expected hostname in output, got: %s", out)
+	}
+	if !strings.Contains(out, "env:prod") {
+		t.Errorf("expected tag in output, got: %s", out)
+	}
+}
+
+func TestTagsShowJSON(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagsHostResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildTagsShowCmd(newTestTagsAPI(srv))
+	root.SetArgs([]string{"--json", "hosts", "tags", "show", "--name", "web-01"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\noutput: %s", err, buf.String())
+	}
+	if got := result["host"]; got != "web-01" {
+		t.Errorf("host = %v, want web-01", got)
+	}
+}
+
+func TestTagsShowMissingName(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagsHostResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildTagsShowCmd(newTestTagsAPI(srv))
+	root.SetArgs([]string{"hosts", "tags", "show"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --name is missing, got nil")
+	}
+}
+
+func TestTagsCreateSuccess(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagsHostResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildTagsCreateCmd(newTestTagsAPI(srv))
+	root.SetArgs([]string{"hosts", "tags", "create", "--name", "web-01", "--tags", "env:prod,role:frontend"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "web-01") {
+		t.Errorf("expected hostname in output, got: %s", out)
+	}
+
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
+
+	var reqBody map[string]interface{}
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	tagsList, ok := reqBody["tags"].([]interface{})
+	if !ok {
+		t.Fatalf("expected tags array in request body, got: %v", reqBody)
+	}
+	if len(tagsList) != 2 {
+		t.Errorf("expected 2 tags in request, got %d", len(tagsList))
+	}
+}
+
+func TestTagsCreateMissingFlags(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagsHostResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"missing name", []string{"hosts", "tags", "create", "--tags", "env:prod"}},
+		{"missing tags", []string{"hosts", "tags", "create", "--name", "web-01"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildTagsCreateCmd(newTestTagsAPI(srv))
+			root.SetArgs(tc.args)
+			if err := root.Execute(); err == nil {
+				t.Errorf("expected error for %s, got nil", tc.name)
+			}
+		})
+	}
+}
+
 const mockTagsListResponse = `{"tags":{"env:prod":["web-01","web-02"],"role:frontend":["web-01"]}}`
 
 func buildTagsListCmd(mkAPI func() (*tagsAPI, error)) (*cobra.Command, *bytes.Buffer) {

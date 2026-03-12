@@ -78,12 +78,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 6: Tags show/create with tests
-- [ ] write tests for `hosts tags show --name <hostname>` -- tags for specific host by source
-- [ ] write tests for `hosts tags create --name <hostname> --tags <tag1,tag2>` -- capture request body
-- [ ] write tests for `hosts tags create` -- required flags validation (name, tags)
-- [ ] implement `newTagsShowCmd` -- call `GetHostTags`
-- [ ] implement `newTagsCreateCmd` -- call `CreateHostTags` with tag list and optional source
-- [ ] run `make build` -- must pass
+- [x] write tests for `hosts tags show --name <hostname>` -- tags for specific host by source
+- [x] write tests for `hosts tags create --name <hostname> --tags <tag1,tag2>` -- capture request body
+- [x] write tests for `hosts tags create` -- required flags validation (name, tags)
+- [x] implement `newTagsShowCmd` -- call `GetHostTags`
+- [x] implement `newTagsCreateCmd` -- call `CreateHostTags` with tag list and optional source
+- [x] run `make build` -- must pass
 
 ### Task 7: Tags update/delete with tests
 - [ ] write tests for `hosts tags update --name <hostname> --tags <tag1,tag2>` -- capture request body
