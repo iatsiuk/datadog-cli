@@ -301,21 +301,59 @@ func newMetricsScalarCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), resp)
 			}
 
-			headers := []string{"NAME", "VALUE"}
-			var rows [][]string
+			var groupCols []*datadogV2.GroupScalarColumn
+			var dataCols []*datadogV2.DataScalarColumn
 			if resp.Data != nil && resp.Data.Attributes != nil {
 				for _, col := range resp.Data.Attributes.GetColumns() {
-					dc := col.DataScalarColumn
-					if dc == nil {
-						continue
+					if col.GroupScalarColumn != nil {
+						groupCols = append(groupCols, col.GroupScalarColumn)
+					} else if col.DataScalarColumn != nil {
+						dataCols = append(dataCols, col.DataScalarColumn)
 					}
+				}
+			}
+
+			var headers []string
+			var rows [][]string
+			if len(groupCols) == 0 {
+				headers = []string{"NAME", "VALUE"}
+				for _, dc := range dataCols {
 					name := dc.GetName()
 					for _, v := range dc.GetValues() {
 						if v == nil {
 							continue
 						}
-						val := strconv.FormatFloat(*v, 'f', -1, 64)
-						rows = append(rows, []string{name, val})
+						rows = append(rows, []string{name, strconv.FormatFloat(*v, 'f', -1, 64)})
+					}
+				}
+			} else {
+				multiData := len(dataCols) > 1
+				if multiData {
+					headers = append(headers, "NAME")
+				}
+				for _, gc := range groupCols {
+					headers = append(headers, strings.ToUpper(gc.GetName()))
+				}
+				headers = append(headers, "VALUE")
+				for _, dc := range dataCols {
+					for i, v := range dc.GetValues() {
+						if v == nil {
+							continue
+						}
+						row := make([]string, 0, len(headers))
+						if multiData {
+							row = append(row, dc.GetName())
+						}
+						for _, gc := range groupCols {
+							gcVals := gc.GetValues()
+							if i < len(gcVals) && len(gcVals[i]) > 0 {
+								row = append(row, gcVals[i][0])
+							} else {
+								row = append(row, "")
+							}
+						}
+						row = append(row, strconv.FormatFloat(*v, 'f', -1, 64))
+						rows = append(rows, row)
 					}
 				}
 			}
