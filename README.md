@@ -165,6 +165,58 @@ Search output columns: `TIMESTAMP | SERVICE | RESOURCE | DURATION | STATUS`
 Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
 Default `--from` is `now-15m`, default `--to` is `now`.
 
+### rum
+
+Search RUM events, manage applications, metrics, retention filters, session replay, and audiences.
+
+```
+dd rum search [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--sort <field>]
+dd rum aggregate --compute <fn>[:<metric>] [--query <query>] [--from <time>] [--to <time>] [--group-by <facets>]
+dd rum app list
+dd rum app show <id>
+dd rum app create --name <name> --type <browser|ios|android|react-native|flutter|roku>
+dd rum app update <id> [--name <name>] [--type <type>]
+dd rum app delete <id> --yes
+dd rum metric list
+dd rum metric show <id>
+dd rum metric create --id <id> --compute-type <count|distribution> [--path <attr>] --filter <query> [--group-by <facets>]
+dd rum metric update <id> [--filter <query>] [--group-by <facets>]
+dd rum metric delete <id> --yes
+dd rum retention-filter list --app <app-id>
+dd rum retention-filter show --app <app-id> <filter-id>
+dd rum retention-filter create --app <app-id> --name <name> --filter <query> --rate <0.0-1.0>
+dd rum retention-filter update --app <app-id> <filter-id> [--name <name>] [--filter <query>] [--rate <0.0-1.0>]
+dd rum retention-filter delete --app <app-id> <filter-id> --yes
+dd rum playlist list
+dd rum playlist show <id>
+dd rum playlist create --name <name>
+dd rum playlist update <id> [--name <name>]
+dd rum playlist delete <id> --yes
+dd rum playlist sessions <id>
+dd rum playlist add-session <playlist-id> <session-id>
+dd rum playlist remove-session <playlist-id> <session-id>
+dd rum heatmap list --view <view-name>
+dd rum heatmap create --view <view-name> --from <time> --to <time>
+dd rum heatmap update <id> [--view <view-name>] [--from <time>] [--to <time>]
+dd rum heatmap delete <id> --yes
+dd rum session segments --view <view-id> --session <session-id>
+dd rum session watchers <session-id>
+dd rum session watch <session-id>
+dd rum session history
+dd rum audience connections list --entity <entity>
+dd rum audience connections create --entity <entity> [flags]
+dd rum audience connections update --entity <entity> [flags]
+dd rum audience connections delete <id> --entity <entity> --yes
+dd rum audience mapping --entity <entity>
+dd rum audience query-users [--filter <query>]
+dd rum audience query-accounts [--filter <query>]
+```
+
+Search output columns: `TIMESTAMP | TYPE | APPLICATION | VIEW | DURATION`
+
+Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
+Default `--from` is `now-15m`, default `--to` is `now`.
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
