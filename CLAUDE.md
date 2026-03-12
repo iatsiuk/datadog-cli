@@ -45,6 +45,18 @@ CLI tool for querying Datadog from the terminal.
 - `datadogV1.HostsApi`: ListHosts, GetHostTotals, MuteHost, UnmuteHost
 - `datadogV1.TagsApi`: ListHostTags, GetHostTags, CreateHostTags, UpdateHostTags, DeleteHostTags
 
+### Monitors
+
+- `datadogV1.MonitorsApi`: ListMonitors, GetMonitor, SearchMonitors, CreateMonitor, UpdateMonitor, DeleteMonitor
+
+### Downtimes
+
+- `datadogV2.DowntimesApi`: ListDowntimes, GetDowntime, CreateDowntime, UpdateDowntime, CancelDowntime
+
+### Monitor Config Policies
+
+- `datadogV2.MonitorsApi`: ListMonitorConfigPolicies, GetMonitorConfigPolicy, CreateMonitorConfigPolicy, UpdateMonitorConfigPolicy, DeleteMonitorConfigPolicy
+
 ## Code Style
 
 ### Imports
