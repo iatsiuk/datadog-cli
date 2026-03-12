@@ -201,15 +201,15 @@ dd rum heatmap update <id> --event <event-id> --start <epoch-ms> [--session <ses
 dd rum heatmap delete <id> --yes
 dd rum session segments --view <view-id> --session <session-id>
 dd rum session watchers <session-id>
-dd rum session watch <session-id>
+dd rum session watch <session-id> --app <app-id> --event <event-id>
 dd rum session history
 dd rum audience connections list --entity <entity>
 dd rum audience connections create --entity <entity> [flags]
-dd rum audience connections update --entity <entity> [flags]
+dd rum audience connections update <id> --entity <entity> [flags]
 dd rum audience connections delete <id> --entity <entity> --yes
 dd rum audience mapping --entity <entity>
-dd rum audience query-users [--filter <query>]
-dd rum audience query-accounts [--filter <query>]
+dd rum audience query-users [--query <query>]
+dd rum audience query-accounts [--query <query>]
 ```
 
 Search output columns: `TIMESTAMP | TYPE | APPLICATION | VIEW | DURATION`

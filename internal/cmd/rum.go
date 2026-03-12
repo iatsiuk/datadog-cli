@@ -1128,6 +1128,9 @@ func newRUMRetentionFilterCreateCmd(mkAPI func() (*rumRetentionFiltersAPI, error
 			if name == "" {
 				return fmt.Errorf("--name is required")
 			}
+			if sampleRate < 0.1 || sampleRate > 100 {
+				return fmt.Errorf("--sample-rate must be between 0.1 and 100")
+			}
 
 			et, err := datadogV2.NewRumRetentionFilterEventTypeFromValue(eventType)
 			if err != nil {
@@ -1217,6 +1220,9 @@ func newRUMRetentionFilterUpdateCmd(mkAPI func() (*rumRetentionFiltersAPI, error
 				attrs.SetEventType(*et)
 			}
 			if cmd.Flags().Changed("sample-rate") {
+				if sampleRate < 0.1 || sampleRate > 100 {
+					return fmt.Errorf("--sample-rate must be between 0.1 and 100")
+				}
 				attrs.SetSampleRate(sampleRate)
 			}
 			if query != "" {
