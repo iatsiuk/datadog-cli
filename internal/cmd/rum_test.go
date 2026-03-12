@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -250,5 +251,137 @@ func TestRUMSearchDefaultFrom(t *testing.T) {
 	}
 	if q := req.URL.Query().Get("filter[from]"); q == "" {
 		t.Error("filter[from] should be set when --from is omitted")
+	}
+}
+
+const mockRUMAggregateResponse = `{
+	"data": {
+		"buckets": [
+			{
+				"by": {"@view.url": "https://example.com/home"},
+				"computes": {"c0": 5}
+			},
+			{
+				"by": {"@view.url": "https://example.com/about"},
+				"computes": {"c0": 2}
+			}
+		]
+	}
+}`
+
+func buildRUMAggregateCmd(mkAPI func() (*rumAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	rum := &cobra.Command{Use: "rum"}
+	rum.AddCommand(newRUMAggregateCmd(mkAPI))
+	root.AddCommand(rum)
+	return root, buf
+}
+
+func TestRUMAggregateFlags(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"buckets":[]}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMAggregateCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{
+		"rum", "aggregate",
+		"--query", "type:error",
+		"--from", "now-1h",
+		"--to", "now",
+		"--group-by", "@view.url",
+		"--compute", "count",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(capturedBody) == 0 {
+		t.Fatal("no request body captured")
+	}
+	var req map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &req); err != nil {
+		t.Fatalf("invalid request body JSON: %v", err)
+	}
+	filter, ok := req["filter"].(map[string]interface{})
+	if !ok {
+		t.Fatal("missing filter in request")
+	}
+	if got := filter["query"]; got != "type:error" {
+		t.Errorf("filter.query = %v, want type:error", got)
+	}
+	if filter["from"] == nil {
+		t.Error("filter.from should be set")
+	}
+	if filter["to"] == nil {
+		t.Error("filter.to should be set")
+	}
+	groupBy, ok := req["group_by"].([]interface{})
+	if !ok || len(groupBy) != 1 {
+		t.Errorf("group_by should have 1 entry, got %v", req["group_by"])
+	}
+	compute, ok := req["compute"].([]interface{})
+	if !ok || len(compute) != 1 {
+		t.Errorf("compute should have 1 entry, got %v", req["compute"])
+	}
+}
+
+func TestRUMAggregateTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAggregateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAggregateCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{
+		"rum", "aggregate",
+		"--group-by", "@view.url",
+		"--compute", "count",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"@VIEW.URL", "C0", "https://example.com/home", "5"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMAggregateJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRUMAggregateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMAggregateCmd(newTestRUMAPI(srv))
+	root.SetArgs([]string{
+		"rum", "aggregate",
+		"--compute", "count",
+		"--json",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
 	}
 }

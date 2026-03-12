@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -34,6 +36,7 @@ func NewRUMCommand() *cobra.Command {
 		Short: "Search and manage Datadog RUM",
 	}
 	cmd.AddCommand(newRUMSearchCmd(defaultRUMAPI))
+	cmd.AddCommand(newRUMAggregateCmd(defaultRUMAPI))
 	return cmd
 }
 
@@ -144,4 +147,175 @@ func strFromMap(m map[string]interface{}, key string) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return ""
+}
+
+func newRUMAggregateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
+	var (
+		query   string
+		fromStr string
+		toStr   string
+		groupBy string
+		compute string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "aggregate",
+		Short: "Aggregate RUM events",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if fromStr == "" {
+				fromStr = "now-15m"
+			}
+
+			fromTime, err := parseRelativeTime(fromStr)
+			if err != nil {
+				return fmt.Errorf("--from: %w", err)
+			}
+			toTime, err := parseRelativeTime(toStr)
+			if err != nil {
+				return fmt.Errorf("--to: %w", err)
+			}
+
+			agg, metric, err := parseRUMComputeSpec(compute)
+			if err != nil {
+				return fmt.Errorf("--compute: %w", err)
+			}
+
+			filter := datadogV2.NewRUMQueryFilter()
+			filter.SetFrom(fromTime.UTC().Format(time.RFC3339))
+			filter.SetTo(toTime.UTC().Format(time.RFC3339))
+			if query != "" {
+				filter.SetQuery(query)
+			}
+
+			c := datadogV2.NewRUMCompute(agg)
+			if metric != "" {
+				c.SetMetric(metric)
+			}
+
+			req := datadogV2.NewRUMAggregateRequest()
+			req.SetFilter(*filter)
+			req.SetCompute([]datadogV2.RUMCompute{*c})
+
+			if groupBy != "" {
+				facets := strings.Split(groupBy, ",")
+				groups := make([]datadogV2.RUMGroupBy, 0, len(facets))
+				for _, f := range facets {
+					f = strings.TrimSpace(f)
+					if f != "" {
+						groups = append(groups, *datadogV2.NewRUMGroupBy(f))
+					}
+				}
+				req.SetGroupBy(groups)
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := rapi.api.AggregateRUMEvents(rapi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("aggregate rum events: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			data := resp.GetData()
+			if asJSON {
+				buckets := data.GetBuckets()
+				if buckets == nil {
+					buckets = []datadogV2.RUMBucketResponse{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), buckets)
+			}
+
+			buckets := data.GetBuckets()
+			if len(buckets) == 0 {
+				return output.PrintTable(cmd.OutOrStdout(), nil, nil)
+			}
+
+			byKeys := sortedStringMapKeys(buckets[0].GetBy())
+			computeKeys := sortedRUMComputeKeys(buckets[0].GetComputes())
+			headers := make([]string, 0, len(byKeys)+len(computeKeys))
+			for _, k := range byKeys {
+				headers = append(headers, strings.ToUpper(k))
+			}
+			for _, k := range computeKeys {
+				headers = append(headers, strings.ToUpper(k))
+			}
+
+			var rows [][]string
+			for _, b := range buckets {
+				row := make([]string, 0, len(byKeys)+len(computeKeys))
+				for _, k := range byKeys {
+					row = append(row, b.GetBy()[k])
+				}
+				for _, k := range computeKeys {
+					v := b.GetComputes()[k]
+					row = append(row, formatRUMBucketValue(v))
+				}
+				rows = append(rows, row)
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "RUM filter query")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time (default: now-15m)")
+	cmd.Flags().StringVar(&toStr, "to", "now", "end time")
+	cmd.Flags().StringVar(&groupBy, "group-by", "", "comma-separated facets to group by")
+	cmd.Flags().StringVar(&compute, "compute", "count", "aggregation spec: <function>[:<metric>]")
+	return cmd
+}
+
+// parseRUMComputeSpec parses "count" or "sum:@metric" into RUM aggregation function and metric.
+func parseRUMComputeSpec(s string) (datadogV2.RUMAggregationFunction, string, error) {
+	parts := strings.SplitN(s, ":", 2)
+	agg, err := datadogV2.NewRUMAggregationFunctionFromValue(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("unknown aggregation %q", parts[0])
+	}
+	metric := ""
+	if len(parts) == 2 {
+		metric = parts[1]
+	}
+	return *agg, metric, nil
+}
+
+func sortedStringMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedRUMComputeKeys(m map[string]datadogV2.RUMAggregateBucketValue) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func formatRUMBucketValue(v datadogV2.RUMAggregateBucketValue) string {
+	switch {
+	case v.RUMAggregateBucketValueSingleString != nil:
+		return *v.RUMAggregateBucketValueSingleString
+	case v.RUMAggregateBucketValueSingleNumber != nil:
+		f := *v.RUMAggregateBucketValueSingleNumber
+		if f == float64(int64(f)) {
+			return fmt.Sprintf("%d", int64(f))
+		}
+		return fmt.Sprintf("%g", f)
+	default:
+		return ""
+	}
 }
