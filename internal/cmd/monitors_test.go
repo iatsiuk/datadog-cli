@@ -155,3 +155,88 @@ func TestMonitorsList_Empty(t *testing.T) {
 		t.Errorf("expected headers in empty output, got:\n%s", out)
 	}
 }
+
+const mockMonitorShowResponse = `{
+	"id": 12345,
+	"name": "CPU High",
+	"type": "metric alert",
+	"overall_state": "Alert",
+	"query": "avg(last_5m):avg:system.cpu.user{*} > 90",
+	"message": "CPU is too high",
+	"tags": ["env:prod", "service:web"]
+}`
+
+func buildMonitorsShowCmd(mkAPI func() (*monitorsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	monitors := &cobra.Command{Use: "monitors"}
+	monitors.AddCommand(newMonitorsShowCmd(mkAPI))
+	root.AddCommand(monitors)
+	return root, buf
+}
+
+func TestMonitorsShow_TableOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "12345") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMonitorShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMonitorsShowCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "show", "--id", "12345"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"12345", "CPU High", "metric alert", "Alert", "CPU is too high"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestMonitorsShow_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMonitorShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMonitorsShowCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"--json", "monitors", "show", "--id", "12345"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{`"id"`, "CPU High", "metric alert"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestMonitorsShow_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildMonitorsShowCmd(newTestMonitorsAPI(srv))
+	errBuf := &bytes.Buffer{}
+	root.SetErr(errBuf)
+	root.SetArgs([]string{"monitors", "show"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --id is missing")
+	}
+}

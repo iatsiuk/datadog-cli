@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/spf13/cobra"
@@ -33,6 +35,7 @@ func NewMonitorsCommand() *cobra.Command {
 		Short: "Manage Datadog monitors",
 	}
 	cmd.AddCommand(newMonitorsListCmd(defaultMonitorsAPI))
+	cmd.AddCommand(newMonitorsShowCmd(defaultMonitorsAPI))
 	return cmd
 }
 
@@ -102,5 +105,64 @@ func newMonitorsListCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "filter by monitor name")
 	cmd.Flags().StringVar(&tags, "tags", "", "filter by tags, e.g. env:prod,service:web")
 	cmd.Flags().IntVar(&pageSize, "page-size", 0, "number of monitors per page")
+	return cmd
+}
+
+var errMonitorIDRequired = errors.New("--id is required")
+
+func newMonitorsShowCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
+	var monitorID int64
+
+	cmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show details of a monitor",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if monitorID == 0 {
+				return errMonitorIDRequired
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			m, httpResp, err := mapi.api.GetMonitor(mapi.ctx, monitorID, *datadogV1.NewGetMonitorOptionalParameters())
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get monitor: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), m)
+			}
+
+			rows := [][]string{
+				{"ID", fmt.Sprintf("%d", m.GetId())},
+				{"NAME", m.GetName()},
+				{"TYPE", string(m.GetType())},
+				{"STATUS", string(m.GetOverallState())},
+				{"QUERY", m.GetQuery()},
+				{"MESSAGE", m.GetMessage()},
+				{"TAGS", strings.Join(m.GetTags(), ", ")},
+			}
+			if t := m.GetCreated(); !t.IsZero() {
+				rows = append(rows, []string{"CREATED", t.Format("2006-01-02 15:04:05")})
+			}
+			if t := m.GetModified(); !t.IsZero() {
+				rows = append(rows, []string{"MODIFIED", t.Format("2006-01-02 15:04:05")})
+			}
+
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+
+	cmd.Flags().Int64Var(&monitorID, "id", 0, "monitor ID")
 	return cmd
 }
