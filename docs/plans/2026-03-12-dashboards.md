@@ -95,11 +95,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 9: Dashboard list items add/remove with tests
-- [ ] write tests for `dashboards lists add-items --id <list-id> --dashboard <dash-id> --type <type>`
-- [ ] write tests for `dashboards lists remove-items --id <list-id> --dashboard <dash-id> --type <type>`
-- [ ] implement `newDashboardListsAddItemsCmd` -- call `CreateDashboardListItems`
-- [ ] implement `newDashboardListsRemoveItemsCmd` -- call `DeleteDashboardListItems`
-- [ ] run `make build` -- must pass
+- [x] write tests for `dashboards lists add-items --id <list-id> --dashboard <dash-id> --type <type>`
+- [x] write tests for `dashboards lists remove-items --id <list-id> --dashboard <dash-id> --type <type>`
+- [x] implement `newDashboardListsAddItemsCmd` -- call `CreateDashboardListItems`
+- [x] implement `newDashboardListsRemoveItemsCmd` -- call `DeleteDashboardListItems`
+- [x] run `make build` -- must pass
 
 ### Task 10: Verify acceptance criteria
 - [ ] verify all dashboard operations: list, show, create, update, delete

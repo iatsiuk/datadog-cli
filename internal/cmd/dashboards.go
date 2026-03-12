@@ -9,6 +9,7 @@ import (
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/spf13/cobra"
 
 	"github.com/iatsiuk/datadog-cli/internal/client"
@@ -39,8 +40,9 @@ func defaultDashboardsAPI() (*dashboardsAPI, error) {
 }
 
 type dashboardListsAPI struct {
-	api *datadogV1.DashboardListsApi
-	ctx context.Context
+	api   *datadogV1.DashboardListsApi
+	v2api *datadogV2.DashboardListsApi
+	ctx   context.Context
 }
 
 func defaultDashboardListsAPI() (*dashboardListsAPI, error) {
@@ -49,7 +51,11 @@ func defaultDashboardListsAPI() (*dashboardListsAPI, error) {
 		return nil, err
 	}
 	c, ctx := client.New(cfg)
-	return &dashboardListsAPI{api: datadogV1.NewDashboardListsApi(c), ctx: ctx}, nil
+	return &dashboardListsAPI{
+		api:   datadogV1.NewDashboardListsApi(c),
+		v2api: datadogV2.NewDashboardListsApi(c),
+		ctx:   ctx,
+	}, nil
 }
 
 // NewDashboardsCommand returns the dashboards cobra command group.
@@ -77,6 +83,8 @@ func newDashboardListsCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Comma
 	cmd.AddCommand(newDashboardListsCreateCmd(mkAPI))
 	cmd.AddCommand(newDashboardListsUpdateCmd(mkAPI))
 	cmd.AddCommand(newDashboardListsDeleteCmd(mkAPI))
+	cmd.AddCommand(newDashboardListsAddItemsCmd(mkAPI))
+	cmd.AddCommand(newDashboardListsRemoveItemsCmd(mkAPI))
 	return cmd
 }
 
@@ -638,5 +646,109 @@ func newDashboardsListCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command {
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
 	}
+	return cmd
+}
+
+func newDashboardListsAddItemsCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Command {
+	var (
+		id          string
+		dashboardID string
+		dashType    string
+	)
+	cmd := &cobra.Command{
+		Use:   "add-items",
+		Short: "Add dashboards to a dashboard list",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if dashboardID == "" {
+				return fmt.Errorf("--dashboard is required")
+			}
+			if dashType == "" {
+				return fmt.Errorf("--type is required")
+			}
+			listID, err := parseListID(id)
+			if err != nil {
+				return err
+			}
+
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			item := datadogV2.NewDashboardListItemRequest(dashboardID, datadogV2.DashboardType(dashType))
+			body := datadogV2.DashboardListAddItemsRequest{
+				Dashboards: []datadogV2.DashboardListItemRequest{*item},
+			}
+			resp, httpResp, err := lapi.v2api.CreateDashboardListItems(lapi.ctx, listID, body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("add dashboard list items: %w", err)
+			}
+
+			added := resp.GetAddedDashboardsToList()
+			fmt.Fprintf(cmd.OutOrStdout(), "added %d dashboard(s) to list %s\n", len(added), id) //nolint:errcheck
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "dashboard list ID (required)")
+	cmd.Flags().StringVar(&dashboardID, "dashboard", "", "dashboard ID to add (required)")
+	cmd.Flags().StringVar(&dashType, "type", "", "dashboard type: custom_timeboard, custom_screenboard, etc. (required)")
+	return cmd
+}
+
+func newDashboardListsRemoveItemsCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.Command {
+	var (
+		id          string
+		dashboardID string
+		dashType    string
+	)
+	cmd := &cobra.Command{
+		Use:   "remove-items",
+		Short: "Remove dashboards from a dashboard list",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if dashboardID == "" {
+				return fmt.Errorf("--dashboard is required")
+			}
+			if dashType == "" {
+				return fmt.Errorf("--type is required")
+			}
+			listID, err := parseListID(id)
+			if err != nil {
+				return err
+			}
+
+			lapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			item := datadogV2.NewDashboardListItemRequest(dashboardID, datadogV2.DashboardType(dashType))
+			body := datadogV2.DashboardListDeleteItemsRequest{
+				Dashboards: []datadogV2.DashboardListItemRequest{*item},
+			}
+			resp, httpResp, err := lapi.v2api.DeleteDashboardListItems(lapi.ctx, listID, body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("remove dashboard list items: %w", err)
+			}
+
+			removed := resp.GetDeletedDashboardsFromList()
+			fmt.Fprintf(cmd.OutOrStdout(), "removed %d dashboard(s) from list %s\n", len(removed), id) //nolint:errcheck
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&id, "id", "", "dashboard list ID (required)")
+	cmd.Flags().StringVar(&dashboardID, "dashboard", "", "dashboard ID to remove (required)")
+	cmd.Flags().StringVar(&dashType, "type", "", "dashboard type: custom_timeboard, custom_screenboard, etc. (required)")
 	return cmd
 }
