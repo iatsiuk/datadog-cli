@@ -554,9 +554,9 @@ func newTagsListCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
 // parseTags splits a comma-separated tag string and filters empty elements.
 func parseTags(raw string) []string {
 	parts := strings.Split(raw, ",")
-	result := parts[:0]
+	result := make([]string, 0, len(parts))
 	for _, p := range parts {
-		if p != "" {
+		if p = strings.TrimSpace(p); p != "" {
 			result = append(result, p)
 		}
 	}

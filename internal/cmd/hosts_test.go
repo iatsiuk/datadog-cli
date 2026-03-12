@@ -64,8 +64,10 @@ func TestNewHostsCommand_Subcommands(t *testing.T) {
 	for _, sub := range cmd.Commands() {
 		subNames[sub.Name()] = true
 	}
-	if !subNames["tags"] {
-		t.Error("expected 'tags' subcommand")
+	for _, want := range []string{"list", "totals", "mute", "unmute", "tags"} {
+		if !subNames[want] {
+			t.Errorf("expected %q subcommand", want)
+		}
 	}
 }
 
@@ -521,6 +523,39 @@ func TestTagsShowMissingName(t *testing.T) {
 	root.SetArgs([]string{"hosts", "tags", "show"})
 	if err := root.Execute(); err == nil {
 		t.Error("expected error when --name is missing, got nil")
+	}
+}
+
+func TestTagsShowSource(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagsHostResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildTagsShowCmd(newTestTagsAPI(srv))
+	root.SetArgs([]string{"hosts", "tags", "show", "--name", "web-01", "--source", "chef"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if got := req.URL.Query().Get("source"); got != "chef" {
+		t.Errorf("source = %q, want %q", got, "chef")
 	}
 }
 
