@@ -46,11 +46,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 2: Dashboard list with tests
-- [ ] write tests for `dashboards list` -- table output (id, title, layout_type, url, created_at, modified_at)
-- [ ] write tests for `dashboards list` -- JSON output mode
-- [ ] write tests for `dashboards list` -- empty result
-- [ ] implement `newDashboardsListCmd` -- call `ListDashboards`, format as table/JSON
-- [ ] run `make build` -- must pass
+- [x] write tests for `dashboards list` -- table output (id, title, layout_type, url, created_at, modified_at)
+- [x] write tests for `dashboards list` -- JSON output mode
+- [x] write tests for `dashboards list` -- empty result
+- [x] implement `newDashboardsListCmd` -- call `ListDashboards`, format as table/JSON
+- [x] run `make build` -- must pass
 
 ### Task 3: Dashboard show with tests
 - [ ] write tests for `dashboards show --id <id>` -- full dashboard details
