@@ -912,7 +912,7 @@ func newRUMMetricUpdateCmd(mkAPI func() (*rumMetricsAPI, error)) *cobra.Command 
 			}
 
 			updateAttrs := datadogV2.NewRumMetricUpdateAttributes()
-			if filter != "" {
+			if cmd.Flags().Changed("filter") {
 				f := datadogV2.NewRumMetricFilter(filter)
 				updateAttrs.SetFilter(*f)
 			}
@@ -1214,6 +1214,11 @@ func newRUMRetentionFilterUpdateCmd(mkAPI func() (*rumRetentionFiltersAPI, error
 			if appID == "" {
 				return fmt.Errorf("--app is required")
 			}
+			if !cmd.Flags().Changed("name") && !cmd.Flags().Changed("event-type") &&
+				!cmd.Flags().Changed("sample-rate") && !cmd.Flags().Changed("query") &&
+				!cmd.Flags().Changed("enabled") {
+				return fmt.Errorf("at least one of --name, --event-type, --sample-rate, --query, or --enabled must be specified")
+			}
 			rfID := args[0]
 
 			attrs := datadogV2.NewRumRetentionFilterUpdateAttributes()
@@ -1514,6 +1519,10 @@ func newRUMPlaylistUpdateCmd(mkAPI func() (*rumPlaylistsAPI, error)) *cobra.Comm
 		Short: "Update a RUM replay playlist",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("name") && !cmd.Flags().Changed("description") {
+				return fmt.Errorf("at least one of --name or --description must be specified")
+			}
+
 			pid, err := parsePlaylistID(args[0])
 			if err != nil {
 				return err
