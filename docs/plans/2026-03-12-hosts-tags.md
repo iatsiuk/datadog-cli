@@ -94,11 +94,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 8: Verify acceptance criteria
-- [ ] verify all host operations: list, totals, mute, unmute
-- [ ] verify all tag operations: list, show, create, update, delete
-- [ ] verify edge cases: empty results, missing flags, `--yes` confirmation, source filtering
-- [ ] run full test suite: `go test -race ./...`
-- [ ] run linter: `make build`
+- [x] verify all host operations: list, totals, mute, unmute
+- [x] verify all tag operations: list, show, create, update, delete
+- [x] verify edge cases: empty results, missing flags, `--yes` confirmation, source filtering
+- [x] run full test suite: `go test -race ./...`
+- [x] run linter: `make build`
 
 ### Task 9: [Final] Update documentation
 - [ ] update CLAUDE.md API reference section with Hosts/Tags APIs
