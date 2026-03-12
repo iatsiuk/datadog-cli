@@ -547,7 +547,7 @@ const mockMetricsScalarMultiGroupByResponse = `{
 				{
 					"name": "env",
 					"type": "group",
-					"values": [["prod"], ["prod"]]
+					"values": [["prod"], ["staging"]]
 				},
 				{
 					"name": "",
@@ -579,11 +579,22 @@ func TestMetricsScalarGroupByTableOutput(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"SERVICE", "web", "api", "42.5", "13.7"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q:\n%s", want, out)
-		}
+	if !strings.Contains(out, "SERVICE") {
+		t.Errorf("output missing header SERVICE:\n%s", out)
 	}
+	checkRow := func(group, value string) {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, group) {
+				if !strings.Contains(line, value) {
+					t.Errorf("row with %q missing %q:\n%s", group, value, out)
+				}
+				return
+			}
+		}
+		t.Errorf("no row with %q:\n%s", group, out)
+	}
+	checkRow("web", "42.5")
+	checkRow("api", "13.7")
 }
 
 func TestMetricsScalarMultiGroupByTableOutput(t *testing.T) {
@@ -606,11 +617,28 @@ func TestMetricsScalarMultiGroupByTableOutput(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"SERVICE", "ENV", "web", "api", "prod", "42.5", "13.7"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing %q:\n%s", want, out)
-		}
+	if !strings.Contains(out, "SERVICE") {
+		t.Errorf("output missing header SERVICE:\n%s", out)
 	}
+	if !strings.Contains(out, "ENV") {
+		t.Errorf("output missing header ENV:\n%s", out)
+	}
+	checkRow := func(group, env, value string) {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, group) {
+				if !strings.Contains(line, env) {
+					t.Errorf("row with %q missing env %q:\n%s", group, env, out)
+				}
+				if !strings.Contains(line, value) {
+					t.Errorf("row with %q missing value %q:\n%s", group, value, out)
+				}
+				return
+			}
+		}
+		t.Errorf("no row with %q:\n%s", group, out)
+	}
+	checkRow("web", "prod", "42.5")
+	checkRow("api", "staging", "13.7")
 }
 
 func buildMetricsTimeseriesCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
