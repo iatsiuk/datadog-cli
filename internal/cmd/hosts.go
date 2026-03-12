@@ -34,7 +34,7 @@ type tagsAPI struct {
 	ctx context.Context
 }
 
-func defaultTagsAPI() (*tagsAPI, error) { //nolint:unused
+func defaultTagsAPI() (*tagsAPI, error) {
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return nil, err
@@ -54,6 +54,7 @@ func NewHostsCommand() *cobra.Command {
 		Use:   "tags",
 		Short: "Manage host tags",
 	}
+	tagsCmd.AddCommand(newTagsListCmd(defaultTagsAPI))
 
 	cmd.AddCommand(newHostsListCmd(defaultHostsAPI))
 	cmd.AddCommand(newHostsTotalsCmd(defaultHostsAPI))
@@ -268,5 +269,53 @@ func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
 
 	cmd.Flags().StringVar(&filter, "filter", "", "filter hosts by name, alias, or tag")
 	cmd.Flags().Int64Var(&from, "from", 0, "only show hosts active since this Unix timestamp")
+	return cmd
+}
+
+func newTagsListCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
+	var source string
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all host tags",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			opts := datadogV1.NewListHostTagsOptionalParameters()
+			if source != "" {
+				opts = opts.WithSource(source)
+			}
+
+			resp, httpResp, err := tapi.api.ListHostTags(tapi.ctx, *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list host tags: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			tags := resp.GetTags()
+			headers := []string{"TAG", "HOSTS"}
+			rows := make([][]string, 0, len(tags))
+			for tag, hosts := range tags {
+				rows = append(rows, []string{tag, strings.Join(hosts, ", ")})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&source, "source", "", "filter tags by source (e.g. users, datadog, chef)")
 	return cmd
 }

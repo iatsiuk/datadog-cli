@@ -69,13 +69,13 @@
 - [x] run `make build` -- must pass
 
 ### Task 5: Tags API wrapper and list all tags with tests
-- [ ] write tests for `newTestTagsAPI` helper
-- [ ] write tests for `hosts tags list` -- table output (host, tags grouped by source)
-- [ ] write tests for `hosts tags list` -- JSON output
-- [ ] write tests for `hosts tags list` -- with `--source` filter
-- [ ] implement `tagsAPI` struct wrapping `datadogV1.TagsApi`
-- [ ] implement `newTagsListCmd` -- call `ListHostTags`, display all host-tag mappings
-- [ ] run `make build` -- must pass
+- [x] write tests for `newTestTagsAPI` helper
+- [x] write tests for `hosts tags list` -- table output (host, tags grouped by source)
+- [x] write tests for `hosts tags list` -- JSON output
+- [x] write tests for `hosts tags list` -- with `--source` filter
+- [x] implement `tagsAPI` struct wrapping `datadogV1.TagsApi`
+- [x] implement `newTagsListCmd` -- call `ListHostTags`, display all host-tag mappings
+- [x] run `make build` -- must pass
 
 ### Task 6: Tags show/create with tests
 - [ ] write tests for `hosts tags show --name <hostname>` -- tags for specific host by source
