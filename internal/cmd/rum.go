@@ -539,15 +539,22 @@ func newRUMAppCreateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
 				return fmt.Errorf("--name is required")
 			}
 
+			validAppTypes := map[string]bool{
+				"browser": true, "ios": true, "android": true, "react-native": true,
+				"flutter": true, "roku": true, "electron": true, "unity": true,
+				"kotlin-multiplatform": true,
+			}
+			if !validAppTypes[appType] {
+				return fmt.Errorf("invalid --type %q; valid types: browser, ios, android, react-native, flutter, roku, electron, unity, kotlin-multiplatform", appType)
+			}
+
 			rapi, err := mkAPI()
 			if err != nil {
 				return err
 			}
 
 			attrs := datadogV2.NewRUMApplicationCreateAttributes(name)
-			if appType != "" {
-				attrs.SetType(appType)
-			}
+			attrs.SetType(appType)
 			data := datadogV2.NewRUMApplicationCreate(*attrs, datadogV2.RUMAPPLICATIONCREATETYPE_RUM_APPLICATION_CREATE)
 			req := datadogV2.NewRUMApplicationCreateRequest(*data)
 
@@ -1555,6 +1562,7 @@ func newRUMPlaylistUpdateCmd(mkAPI func() (*rumPlaylistsAPI, error)) *cobra.Comm
 			}
 
 			data := datadogV2.NewPlaylistData(datadogV2.PLAYLISTDATATYPE_RUM_REPLAY_PLAYLIST)
+			data.SetId(strconv.Itoa(int(pid)))
 			data.SetAttributes(*attrs)
 			body := datadogV2.NewPlaylist(*data)
 

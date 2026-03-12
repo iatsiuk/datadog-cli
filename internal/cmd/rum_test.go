@@ -570,6 +570,44 @@ func TestRUMAppUpdateFlags(t *testing.T) {
 	}
 }
 
+func TestRUMAppCreateTypeValidation(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		appType string
+		wantErr bool
+	}{
+		{"invalid", true},
+		{"browser", false},
+		{"ios", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.appType, func(t *testing.T) {
+			t.Parallel()
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
+			}))
+			defer srv.Close()
+
+			root, _ := buildRUMAppCmd(newTestRUMAPI(srv))
+			root.SetArgs([]string{"rum", "app", "create", "--name", "My App", "--type", tc.appType})
+			err := root.Execute()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected error for invalid type")
+				}
+				if !strings.Contains(err.Error(), "invalid --type") {
+					t.Errorf("error %q does not mention invalid --type", err.Error())
+				}
+			} else if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+		})
+	}
+}
+
 func TestRUMAppDeleteRequiresYes(t *testing.T) {
 	t.Parallel()
 
@@ -1313,9 +1351,14 @@ func TestRUMPlaylistCreateRequiresName(t *testing.T) {
 func TestRUMPlaylistUpdate(t *testing.T) {
 	t.Parallel()
 
-	callCount := 0
+	var (
+		mu        sync.Mutex
+		callCount int
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		callCount++
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockPlaylistResponse) //nolint:errcheck
 	}))
@@ -1328,10 +1371,68 @@ func TestRUMPlaylistUpdate(t *testing.T) {
 	}
 
 	// should make GET then PUT (2 calls)
-	if callCount < 2 {
-		t.Errorf("expected at least 2 API calls, got %d", callCount)
+	mu.Lock()
+	got := callCount
+	mu.Unlock()
+	if got < 2 {
+		t.Errorf("expected at least 2 API calls, got %d", got)
 	}
 	_ = buf.String()
+}
+
+func TestRUMPlaylistUpdateSendsID(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedPUT []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPut {
+			b, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			capturedPUT = b
+			mu.Unlock()
+		}
+		fmt.Fprint(w, mockPlaylistResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "update", "42", "--name", "Updated"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := string(capturedPUT)
+	mu.Unlock()
+	if body == "" {
+		t.Fatal("no PUT request captured")
+	}
+	// verify data.id is present in the PUT body
+	if !strings.Contains(body, `"id"`) {
+		t.Errorf("PUT body missing 'id' field: %s", body)
+	}
+	if !strings.Contains(body, `"42"`) {
+		t.Errorf("PUT body missing playlist id '42': %s", body)
+	}
+}
+
+func TestRUMPlaylistUpdateNoFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "update", "42"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when no --name or --description provided")
+	}
 }
 
 func TestRUMPlaylistDelete(t *testing.T) {
