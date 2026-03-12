@@ -43,6 +43,7 @@ func NewMonitorsCommand() *cobra.Command {
 	cmd.AddCommand(newMonitorsDeleteCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsMuteCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsUnmuteCmd(defaultMonitorsAPI))
+	cmd.AddCommand(newDowntimeCmd(defaultDowntimesAPI))
 	return cmd
 }
 
