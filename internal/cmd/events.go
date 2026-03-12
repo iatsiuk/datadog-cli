@@ -161,7 +161,12 @@ func newEventsCreateCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 				payload.SetMessage(text)
 			}
 			if tagsStr != "" {
-				payload.SetTags(strings.Split(tagsStr, ","))
+				rawTags := strings.Split(tagsStr, ",")
+				tags := make([]string, len(rawTags))
+				for i, t := range rawTags {
+					tags[i] = strings.TrimSpace(t)
+				}
+				payload.SetTags(tags)
 			}
 
 			req := datadogV2.NewEventCreateRequest(*payload, datadogV2.EVENTCREATEREQUESTTYPE_EVENT)
@@ -227,20 +232,86 @@ func newEventsShowCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 			}
 
 			attrs := event.GetAttributes()
+			title, alertType, url := extractAlertEventFields(attrs.GetAttributes())
 			fields := []struct{ k, v string }{
 				{"ID", event.GetId()},
+				{"Title", title},
 				{"Date", attrs.GetTimestamp()},
+				{"Alert Type", alertType},
 				{"Tags", strings.Join(attrs.GetTags(), ", ")},
 				{"Message", attrs.GetMessage()},
+				{"URL", url},
 			}
 			w := cmd.OutOrStdout()
 			for _, f := range fields {
+				if f.v == "" {
+					continue
+				}
 				fmt.Fprintf(w, "%-12s %s\n", f.k+":", f.v) //nolint:errcheck
 			}
 			return nil
 		},
 	}
 	return cmd
+}
+
+// extractAlertEventFields extracts title, alert type, and URL from the union
+// attributes type. V2EventAttributesAttributes is a union of AlertEventAttributes
+// and ChangeEventAttributes; both have Title. AlertEventAttributes also has Status
+// and Links. When neither typed field is populated, fall back to UnparsedObject.
+func extractAlertEventFields(inner datadogV2.V2EventAttributesAttributes) (title, alertType, url string) {
+	if a := inner.AlertEventAttributes; a != nil {
+		title = a.GetTitle()
+		alertType = string(a.GetStatus())
+		for _, link := range a.GetLinks() {
+			if link.Url != nil {
+				url = *link.Url
+				break
+			}
+		}
+		return
+	}
+	if c := inner.ChangeEventAttributes; c != nil {
+		title = c.GetTitle()
+		// read status/links from additionalProperties (alert-specific fields)
+		if raw := c.AdditionalProperties; raw != nil {
+			if v, ok := raw["status"].(string); ok {
+				alertType = v
+			}
+			if links, ok := raw["links"].([]interface{}); ok {
+				for _, l := range links {
+					if link, ok := l.(map[string]interface{}); ok {
+						if v, ok := link["url"].(string); ok {
+							url = v
+							break
+						}
+					}
+				}
+			}
+		}
+		return
+	}
+	raw, ok := inner.UnparsedObject.(map[string]interface{})
+	if !ok {
+		return
+	}
+	if v, ok := raw["title"].(string); ok {
+		title = v
+	}
+	if v, ok := raw["status"].(string); ok {
+		alertType = v
+	}
+	if links, ok := raw["links"].([]interface{}); ok {
+		for _, l := range links {
+			if link, ok := l.(map[string]interface{}); ok {
+				if v, ok := link["url"].(string); ok {
+					url = v
+					break
+				}
+			}
+		}
+	}
+	return
 }
 
 func printEventsTable(w io.Writer, data []datadogV2.EventResponse) error {

@@ -348,7 +348,12 @@ const mockEventShowResponse = `{
 		"attributes": {
 			"timestamp": "2024-01-15T10:30:00.000Z",
 			"tags": ["env:prod", "service:web"],
-			"message": "Deploy completed successfully"
+			"message": "Deploy completed successfully",
+			"attributes": {
+				"title": "Deploy v2.1",
+				"status": "info",
+				"links": [{"url": "https://app.datadoghq.com/event/event-123"}]
+			}
 		}
 	}
 }`
@@ -373,7 +378,7 @@ func TestEventsShowDetail(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"event-123", "2024-01-15", "env:prod", "Deploy completed"} {
+	for _, want := range []string{"event-123", "Deploy v2.1", "2024-01-15", "info", "env:prod", "Deploy completed", "https://app.datadoghq.com"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
@@ -559,6 +564,47 @@ func TestEventsCreateAlertTypeValidation(t *testing.T) {
 	root.SetArgs([]string{"events", "create", "--title", "test", "--alert-type", "invalid"})
 	if err := root.Execute(); err == nil {
 		t.Error("expected error for invalid --alert-type value")
+	}
+}
+
+func TestEventsCreateTagsTrimmed(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "create", "--title", "test", "--tags", "env:prod, service:web"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("invalid request body JSON: %v", err)
+	}
+	data := payload["data"].(map[string]interface{})
+	attrs := data["attributes"].(map[string]interface{})
+	tags, ok := attrs["tags"].([]interface{})
+	if !ok || len(tags) != 2 {
+		t.Fatalf("tags = %v, want 2 elements", attrs["tags"])
+	}
+	if tags[1] != "service:web" {
+		t.Errorf("tags[1] = %q, want %q (should be trimmed)", tags[1], "service:web")
 	}
 }
 
