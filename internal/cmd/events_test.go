@@ -217,6 +217,115 @@ func TestEventsListJSONOutput(t *testing.T) {
 	}
 }
 
+func buildEventsSearchCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	events := &cobra.Command{Use: "events"}
+	events.AddCommand(newEventsSearchCmd(mkAPI))
+	root.AddCommand(events)
+	return root, buf
+}
+
+func TestEventsSearchFlagQuery(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildEventsSearchCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "search", "--query", "deployment", "--limit", "20"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if req.Method != http.MethodPost {
+		t.Errorf("method = %q, want POST", req.Method)
+	}
+}
+
+func TestEventsSearchQueryRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildEventsSearchCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "search"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --query is missing")
+	}
+}
+
+func TestEventsSearchTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildEventsSearchCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "search", "--query", "deployment"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"TIMESTAMP", "TITLE", "SOURCE", "TAGS", "Deploy v2.1", "github", "env:prod"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestEventsSearchJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildEventsSearchCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "search", "--query", "deployment", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d entries, want 1", len(result))
+	}
+}
+
 func TestEventsListDefaultFrom(t *testing.T) {
 	t.Parallel()
 
