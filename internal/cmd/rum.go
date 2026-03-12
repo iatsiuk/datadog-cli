@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -1772,11 +1773,15 @@ func newRUMHeatmapListCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Command 
 					id = *s.Id
 				}
 				a := s.GetAttributes()
+				createdAt := ""
+				if t := a.GetCreatedAt(); !t.IsZero() {
+					createdAt = t.Format(time.RFC3339)
+				}
 				rows = append(rows, []string{
 					id,
 					a.GetViewName(),
 					a.GetDeviceType(),
-					a.GetCreatedAt().Format(time.RFC3339),
+					createdAt,
 				})
 			}
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
@@ -1801,18 +1806,22 @@ func newRUMHeatmapCreateCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Comman
 		Use:   "create",
 		Short: "Create a RUM replay heatmap snapshot",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			for flag, val := range map[string]string{
-				"--app":    appID,
-				"--device": deviceType,
-				"--event":  eventID,
-				"--name":   name,
-				"--view":   viewName,
-			} {
-				if val == "" {
-					return fmt.Errorf("%s is required", flag)
-				}
+			if appID == "" {
+				return fmt.Errorf("--app is required")
 			}
-			if start == 0 {
+			if deviceType == "" {
+				return fmt.Errorf("--device is required")
+			}
+			if eventID == "" {
+				return fmt.Errorf("--event is required")
+			}
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+			if viewName == "" {
+				return fmt.Errorf("--view is required")
+			}
+			if !cmd.Flags().Changed("start") {
 				return fmt.Errorf("--start is required")
 			}
 
@@ -1853,11 +1862,15 @@ func newRUMHeatmapCreateCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Comman
 			if d.Id != nil {
 				id = *d.Id
 			}
+			createdAt := ""
+			if t := a.GetCreatedAt(); !t.IsZero() {
+				createdAt = t.Format(time.RFC3339)
+			}
 			rows := [][]string{
 				{"ID", id},
 				{"VIEW", a.GetViewName()},
 				{"DEVICE", a.GetDeviceType()},
-				{"CREATED AT", a.GetCreatedAt().Format(time.RFC3339)},
+				{"CREATED AT", createdAt},
 			}
 			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
 		},
@@ -1889,7 +1902,7 @@ func newRUMHeatmapUpdateCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Comman
 			if eventID == "" {
 				return fmt.Errorf("--event is required")
 			}
-			if start == 0 {
+			if !cmd.Flags().Changed("start") {
 				return fmt.Errorf("--start is required")
 			}
 
@@ -2011,10 +2024,12 @@ func newRUMSessionSegmentsCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Comm
 				return err
 			}
 			httpResp, err := sapi.sessions.GetSegments(sapi.ctx, viewID, sessionID)
+			if httpResp != nil {
+				defer func() { _ = httpResp.Body.Close() }()
+			}
 			if err != nil {
 				return fmt.Errorf("get segments: %w", err)
 			}
-			defer func() { _ = httpResp.Body.Close() }()
 
 			_, err = io.Copy(cmd.OutOrStdout(), httpResp.Body)
 			return err
@@ -2065,10 +2080,14 @@ func newRUMSessionWatchersCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Comm
 					id = *w.Id
 				}
 				a := w.GetAttributes()
+				lastWatched := ""
+				if t := a.GetLastWatchedAt(); !t.IsZero() {
+					lastWatched = t.Format(time.RFC3339)
+				}
 				rows = append(rows, []string{
 					id,
 					a.GetHandle(),
-					a.GetLastWatchedAt().Format(time.RFC3339),
+					lastWatched,
 					fmt.Sprintf("%d", a.GetWatchCount()),
 				})
 			}
@@ -2176,9 +2195,13 @@ func newRUMSessionHistoryCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Comma
 					id = *s.Id
 				}
 				a := s.GetAttributes()
+				lastWatched := ""
+				if t := a.GetLastWatchedAt(); !t.IsZero() {
+					lastWatched = t.Format(time.RFC3339)
+				}
 				rows = append(rows, []string{
 					id,
-					a.GetLastWatchedAt().Format(time.RFC3339),
+					lastWatched,
 					a.GetTrack(),
 				})
 			}
@@ -2314,9 +2337,11 @@ func newRUMAudienceConnectionsCreateCmd(mkAPI func() (*rumAudienceAPI, error)) *
 func newRUMAudienceConnectionsUpdateCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
 	var entity string
 	cmd := &cobra.Command{
-		Use:   "update",
+		Use:   "update <id>",
 		Short: "Update an audience data connection",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			connectionID := args[0]
 			if entity == "" {
 				return fmt.Errorf("--entity is required")
 			}
@@ -2326,7 +2351,7 @@ func newRUMAudienceConnectionsUpdateCmd(mkAPI func() (*rumAudienceAPI, error)) *
 			}
 
 			attrs := datadogV2.NewUpdateConnectionRequestDataAttributes()
-			data := datadogV2.NewUpdateConnectionRequestData("", datadogV2.UPDATECONNECTIONREQUESTDATATYPE_CONNECTION_ID)
+			data := datadogV2.NewUpdateConnectionRequestData(connectionID, datadogV2.UPDATECONNECTIONREQUESTDATATYPE_CONNECTION_ID)
 			data.SetAttributes(*attrs)
 			body := datadogV2.NewUpdateConnectionRequest()
 			body.SetData(*data)
@@ -2495,7 +2520,11 @@ func newRUMAudienceQueryUsersCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.C
 				return err
 			}
 			for _, h := range hits {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%v\n", h)
+				b, merr := json.Marshal(h)
+				if merr != nil {
+					return merr
+				}
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s\n", b)
 				if err != nil {
 					return err
 				}
@@ -2564,7 +2593,11 @@ func newRUMAudienceQueryAccountsCmd(mkAPI func() (*rumAudienceAPI, error)) *cobr
 				return err
 			}
 			for _, h := range hits {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%v\n", h)
+				b, merr := json.Marshal(h)
+				if merr != nil {
+					return merr
+				}
+				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s\n", b)
 				if err != nil {
 					return err
 				}

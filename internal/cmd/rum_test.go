@@ -284,9 +284,15 @@ func buildRUMAggregateCmd(mkAPI func() (*rumAPI, error)) (*cobra.Command, *bytes
 func TestRUMAggregateFlags(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"data":{"buckets":[]}}`) //nolint:errcheck
 	}))
@@ -304,11 +310,14 @@ func TestRUMAggregateFlags(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if len(capturedBody) == 0 {
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if len(gotBody) == 0 {
 		t.Fatal("no request body captured")
 	}
 	var req map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &req); err != nil {
+	if err := json.Unmarshal(gotBody, &req); err != nil {
 		t.Fatalf("invalid request body JSON: %v", err)
 	}
 	filter, ok := req["filter"].(map[string]interface{})
@@ -484,9 +493,15 @@ func TestRUMAppShowTable(t *testing.T) {
 func TestRUMAppCreateFlags(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
 	}))
@@ -499,7 +514,10 @@ func TestRUMAppCreateFlags(t *testing.T) {
 	}
 
 	var req map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &req); err != nil {
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if err := json.Unmarshal(gotBody, &req); err != nil {
 		t.Fatalf("invalid request body: %v", err)
 	}
 	data, _ := req["data"].(map[string]interface{})
@@ -515,9 +533,15 @@ func TestRUMAppCreateFlags(t *testing.T) {
 func TestRUMAppUpdateFlags(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRUMAppResponse) //nolint:errcheck
 	}))
@@ -530,7 +554,10 @@ func TestRUMAppUpdateFlags(t *testing.T) {
 	}
 
 	var req map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &req); err != nil {
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if err := json.Unmarshal(gotBody, &req); err != nil {
 		t.Fatalf("invalid request body: %v", err)
 	}
 	data, _ := req["data"].(map[string]interface{})
@@ -693,9 +720,15 @@ func TestRUMMetricShowTable(t *testing.T) {
 func TestRUMMetricCreateFlags(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRUMMetricResponse) //nolint:errcheck
 	}))
@@ -715,7 +748,10 @@ func TestRUMMetricCreateFlags(t *testing.T) {
 	}
 
 	var req map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &req); err != nil {
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if err := json.Unmarshal(gotBody, &req); err != nil {
 		t.Fatalf("invalid request body: %v", err)
 	}
 	data, _ := req["data"].(map[string]interface{})
@@ -739,9 +775,15 @@ func TestRUMMetricCreateFlags(t *testing.T) {
 func TestRUMMetricUpdateFlags(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRUMMetricResponse) //nolint:errcheck
 	}))
@@ -757,7 +799,10 @@ func TestRUMMetricUpdateFlags(t *testing.T) {
 	}
 
 	var req map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &req); err != nil {
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if err := json.Unmarshal(gotBody, &req); err != nil {
 		t.Fatalf("invalid request body: %v", err)
 	}
 	data, _ := req["data"].(map[string]interface{})
@@ -929,9 +974,15 @@ func TestRUMRetentionFilterShowTable(t *testing.T) {
 func TestRUMRetentionFilterCreateFlags(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRUMRetentionFilterResponse) //nolint:errcheck
 	}))
@@ -951,7 +1002,10 @@ func TestRUMRetentionFilterCreateFlags(t *testing.T) {
 	}
 
 	var req map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &req); err != nil {
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if err := json.Unmarshal(gotBody, &req); err != nil {
 		t.Fatalf("invalid request body: %v", err)
 	}
 	data, _ := req["data"].(map[string]interface{})
@@ -973,9 +1027,15 @@ func TestRUMRetentionFilterCreateFlags(t *testing.T) {
 func TestRUMRetentionFilterUpdateFlags(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRUMRetentionFilterResponse) //nolint:errcheck
 	}))
@@ -993,7 +1053,10 @@ func TestRUMRetentionFilterUpdateFlags(t *testing.T) {
 	}
 
 	var req map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &req); err != nil {
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if err := json.Unmarshal(gotBody, &req); err != nil {
 		t.Fatalf("invalid request body: %v", err)
 	}
 	data, _ := req["data"].(map[string]interface{})
@@ -1201,9 +1264,15 @@ func TestRUMPlaylistShowInvalidID(t *testing.T) {
 func TestRUMPlaylistCreate(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockPlaylistResponse) //nolint:errcheck
 	}))
@@ -1215,8 +1284,11 @@ func TestRUMPlaylistCreate(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(string(capturedBody), "My Playlist") {
-		t.Errorf("request body missing name: %s", capturedBody)
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(gotBody), "My Playlist") {
+		t.Errorf("request body missing name: %s", gotBody)
 	}
 	if !strings.Contains(buf.String(), "My Playlist") {
 		t.Errorf("output missing name:\n%s", buf.String())
@@ -1508,9 +1580,15 @@ func TestRUMHeatmapListJSON(t *testing.T) {
 func TestRUMHeatmapCreate(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockHeatmapResponse) //nolint:errcheck
 	}))
@@ -1530,8 +1608,11 @@ func TestRUMHeatmapCreate(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(string(capturedBody), "app-abc") {
-		t.Errorf("request body missing app id: %s", capturedBody)
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(gotBody), "app-abc") {
+		t.Errorf("request body missing app id: %s", gotBody)
 	}
 	if !strings.Contains(buf.String(), "snap-1") {
 		t.Errorf("output missing snapshot id:\n%s", buf.String())
@@ -1556,9 +1637,15 @@ func TestRUMHeatmapCreateRequiresFlags(t *testing.T) {
 func TestRUMHeatmapUpdate(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockHeatmapResponse) //nolint:errcheck
 	}))
@@ -1574,8 +1661,11 @@ func TestRUMHeatmapUpdate(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(string(capturedBody), "evt-2") {
-		t.Errorf("request body missing event id: %s", capturedBody)
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(gotBody), "evt-2") {
+		t.Errorf("request body missing event id: %s", gotBody)
 	}
 	if !strings.Contains(buf.String(), "snap-1") {
 		t.Errorf("output missing snapshot id:\n%s", buf.String())
@@ -1795,9 +1885,15 @@ func TestRUMSessionWatchersJSON(t *testing.T) {
 func TestRUMSessionWatch(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockWatchResponse) //nolint:errcheck
 	}))
@@ -1809,8 +1905,11 @@ func TestRUMSessionWatch(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(string(capturedBody), "app-abc") {
-		t.Errorf("request body missing app id: %s", capturedBody)
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(gotBody), "app-abc") {
+		t.Errorf("request body missing app id: %s", gotBody)
 	}
 	if !strings.Contains(buf.String(), "watch-1") {
 		t.Errorf("output missing watch id:\n%s", buf.String())
@@ -2032,9 +2131,15 @@ func TestRUMAudienceConnectionsListJSON(t *testing.T) {
 func TestRUMAudienceConnectionsCreate(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer srv.Close()
@@ -2051,8 +2156,11 @@ func TestRUMAudienceConnectionsCreate(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(string(capturedBody), "user.email") {
-		t.Errorf("request body missing join_attribute: %s", capturedBody)
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(gotBody), "user.email") {
+		t.Errorf("request body missing join_attribute: %s", gotBody)
 	}
 	if !strings.Contains(buf.String(), "created") {
 		t.Errorf("output missing 'created':\n%s", buf.String())
@@ -2070,7 +2178,7 @@ func TestRUMAudienceConnectionsUpdate(t *testing.T) {
 	defer srv.Close()
 
 	root, buf := buildRUMAudienceCmd(newTestRUMAudienceAPI(srv))
-	root.SetArgs([]string{"rum", "audience", "connections", "update", "--entity", "users"})
+	root.SetArgs([]string{"rum", "audience", "connections", "update", "conn-1", "--entity", "users"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -2161,9 +2269,15 @@ func TestRUMAudienceMappingRequiresEntity(t *testing.T) {
 func TestRUMAudienceQueryUsers(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockQueryResponse) //nolint:errcheck
 	}))
@@ -2175,8 +2289,11 @@ func TestRUMAudienceQueryUsers(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(string(capturedBody), "email:*@example.com") {
-		t.Errorf("request body missing query: %s", capturedBody)
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(gotBody), "email:*@example.com") {
+		t.Errorf("request body missing query: %s", gotBody)
 	}
 	if !strings.Contains(buf.String(), "total: 2") {
 		t.Errorf("output missing total:\n%s", buf.String())
@@ -2210,9 +2327,15 @@ func TestRUMAudienceQueryUsersJSON(t *testing.T) {
 func TestRUMAudienceQueryAccounts(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = b
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockQueryResponse) //nolint:errcheck
 	}))
@@ -2224,8 +2347,11 @@ func TestRUMAudienceQueryAccounts(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(string(capturedBody), "plan:enterprise") {
-		t.Errorf("request body missing query: %s", capturedBody)
+	mu.Lock()
+	gotBody := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(gotBody), "plan:enterprise") {
+		t.Errorf("request body missing query: %s", gotBody)
 	}
 	if !strings.Contains(buf.String(), "total: 2") {
 		t.Errorf("output missing total:\n%s", buf.String())
