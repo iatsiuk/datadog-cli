@@ -115,6 +115,14 @@ func newDashboardListsShowCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.C
 				return fmt.Errorf("get dashboard list: %w", err)
 			}
 
+			items, itemsResp, err := lapi.v2api.GetDashboardListItems(lapi.ctx, listID)
+			if itemsResp != nil {
+				_ = itemsResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get dashboard list items: %w", err)
+			}
+
 			asJSON := false
 			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
 				asJSON = f.Value.String() == "true"
@@ -135,7 +143,19 @@ func newDashboardListsShowCmd(mkAPI func() (*dashboardListsAPI, error)) *cobra.C
 			}
 			headers := []string{"ID", "NAME", "COUNT", "CREATED", "MODIFIED"}
 			rows := [][]string{{idStr, resp.GetName(), count, created, modified}}
-			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+			if err := output.PrintTable(cmd.OutOrStdout(), headers, rows); err != nil {
+				return err
+			}
+
+			if len(items.GetDashboards()) > 0 {
+				itemHeaders := []string{"DASHBOARD_ID", "TITLE", "TYPE", "URL"}
+				var itemRows [][]string
+				for _, d := range items.GetDashboards() {
+					itemRows = append(itemRows, []string{d.GetId(), d.GetTitle(), string(d.GetType()), d.GetUrl()})
+				}
+				return output.PrintTable(cmd.OutOrStdout(), itemHeaders, itemRows)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&id, "id", "", "dashboard list ID (required)")
@@ -370,11 +390,13 @@ func newDashboardsShowCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command {
 			if t := resp.ModifiedAt; t != nil {
 				modified = t.UTC().Format("2006-01-02")
 			}
-			headers := []string{"ID", "TITLE", "LAYOUT", "URL", "CREATED", "MODIFIED"}
+			headers := []string{"ID", "TITLE", "LAYOUT", "DESCRIPTION", "AUTHOR", "URL", "CREATED", "MODIFIED"}
 			rows := [][]string{{
 				resp.GetId(),
 				resp.GetTitle(),
 				string(resp.GetLayoutType()),
+				resp.GetDescription(),
+				resp.GetAuthorHandle(),
 				resp.GetUrl(),
 				created,
 				modified,
@@ -388,11 +410,12 @@ func newDashboardsShowCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command {
 
 func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command {
 	var (
-		title       string
-		layoutType  string
-		description string
-		tags        string
-		widgetsJSON string
+		title        string
+		layoutType   string
+		description  string
+		tags         string
+		widgetsJSON  string
+		templateVars string
 	)
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -433,6 +456,14 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 				body.Widgets = widgets
 			}
 
+			if templateVars != "" {
+				var tvars []datadogV1.DashboardTemplateVariable
+				if err := json.Unmarshal([]byte(templateVars), &tvars); err != nil {
+					return fmt.Errorf("parse --template-vars-json: %w", err)
+				}
+				body.TemplateVariables = tvars
+			}
+
 			dapi, err := mkAPI()
 			if err != nil {
 				return err
@@ -469,6 +500,7 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 	cmd.Flags().StringVar(&description, "description", "", "dashboard description")
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags (e.g. team:infra,env:prod)")
 	cmd.Flags().StringVar(&widgetsJSON, "widgets-json", "", "widgets as JSON array")
+	cmd.Flags().StringVar(&templateVars, "template-vars-json", "", "template variables as JSON array")
 	return cmd
 }
 

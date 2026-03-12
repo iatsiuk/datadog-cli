@@ -22,6 +22,7 @@ func newTestDashboardListsAPI(srv *httptest.Server) func() (*dashboardListsAPI, 
 		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
 		cfg.OperationServers["v2.DashboardListsApi.CreateDashboardListItems"] = datadog.ServerConfigurations{{URL: srv.URL}}
 		cfg.OperationServers["v2.DashboardListsApi.DeleteDashboardListItems"] = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.OperationServers["v2.DashboardListsApi.GetDashboardListItems"] = datadog.ServerConfigurations{{URL: srv.URL}}
 		cfg.Debug = false
 		c := datadog.NewAPIClient(cfg)
 		ctx := context.WithValue(
@@ -207,7 +208,7 @@ func TestDashboardsShowTableOutput(t *testing.T) {
 		t.Errorf("request path %q missing dashboard id", capturedPath)
 	}
 	out := buf.String()
-	for _, want := range []string{"ID", "TITLE", "LAYOUT", "URL", "CREATED", "MODIFIED", "abc-123", "My Dashboard", "ordered"} {
+	for _, want := range []string{"ID", "TITLE", "LAYOUT", "DESCRIPTION", "AUTHOR", "URL", "CREATED", "MODIFIED", "abc-123", "My Dashboard", "ordered", "user@example.com"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
@@ -471,6 +472,41 @@ func TestDashboardsCreateWithWidgetsJSON(t *testing.T) {
 	}
 }
 
+func TestDashboardsCreateWithTemplateVarsJSON(t *testing.T) {
+	t.Parallel()
+
+	templateVarsJSON := `[{"name":"env","prefix":"env","defaults":["prod"]}]`
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := new(bytes.Buffer)
+		b.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = b.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildDashboardsCreateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{
+		"dashboards", "create",
+		"--title", "New Dashboard",
+		"--layout-type", "ordered",
+		"--template-vars-json", templateVarsJSON,
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	tvars, ok := body["template_variables"].([]interface{})
+	if !ok || len(tvars) != 1 {
+		t.Errorf("expected 1 template variable, got %v", body["template_variables"])
+	}
+}
+
 func buildDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) (*cobra.Command, *bytes.Buffer) {
 	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
@@ -694,15 +730,40 @@ const mockDashboardListShowResponse = `{
 	"modified": "2024-01-20T15:30:00.000Z"
 }`
 
+const mockDashboardListItemsResponse = `{
+	"dashboards": [],
+	"total": 0
+}`
+
+const mockDashboardListItemsWithDashboardsResponse = `{
+	"dashboards": [
+		{
+			"id": "def-456",
+			"title": "My Dashboard",
+			"type": "custom_timeboard",
+			"url": "/dashboard/def-456/my-dashboard"
+		}
+	],
+	"total": 1
+}`
+
+func newTestDashboardListsShowServer(t *testing.T, listResp, itemsResp string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// v2 items endpoint: /api/v2/dashboard/lists/manual/{id}/dashboards
+		if strings.Contains(r.URL.Path, "/v2/") {
+			fmt.Fprint(w, itemsResp) //nolint:errcheck
+		} else {
+			fmt.Fprint(w, listResp) //nolint:errcheck
+		}
+	}))
+}
+
 func TestDashboardListsShowTableOutput(t *testing.T) {
 	t.Parallel()
 
-	var capturedPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.Path
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, mockDashboardListShowResponse) //nolint:errcheck
-	}))
+	srv := newTestDashboardListsShowServer(t, mockDashboardListShowResponse, mockDashboardListItemsResponse)
 	defer srv.Close()
 
 	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
@@ -711,11 +772,28 @@ func TestDashboardListsShowTableOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(capturedPath, "42") {
-		t.Errorf("request path %q missing list id", capturedPath)
-	}
 	out := buf.String()
 	for _, want := range []string{"ID", "NAME", "COUNT", "CREATED", "MODIFIED", "42", "My List", "3"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDashboardListsShowWithItems(t *testing.T) {
+	t.Parallel()
+
+	srv := newTestDashboardListsShowServer(t, mockDashboardListShowResponse, mockDashboardListItemsWithDashboardsResponse)
+	defer srv.Close()
+
+	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
+	root.SetArgs([]string{"dashboards", "lists", "show", "--id", "42"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"DASHBOARD_ID", "TITLE", "TYPE", "URL", "def-456", "My Dashboard", "custom_timeboard"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
@@ -725,10 +803,7 @@ func TestDashboardListsShowTableOutput(t *testing.T) {
 func TestDashboardListsShowJSONOutput(t *testing.T) {
 	t.Parallel()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, mockDashboardListShowResponse) //nolint:errcheck
-	}))
+	srv := newTestDashboardListsShowServer(t, mockDashboardListShowResponse, mockDashboardListItemsResponse)
 	defer srv.Close()
 
 	root, buf := buildDashboardListsSubCmd(newTestDashboardListsAPI(srv))
