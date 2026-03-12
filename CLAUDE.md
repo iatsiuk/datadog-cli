@@ -40,6 +40,11 @@ CLI tool for querying Datadog from the terminal.
 - Note: CreateEvent requires unstable operation flag: `c.GetConfig().SetUnstableOperationEnabled("v2.EventsApi.CreateEvent", true)`
 - `AlertEventCustomAttributesStatus` has three values: OK, WARN, ERROR (no SUCCESS constant)
 
+### Hosts
+
+- `datadogV1.HostsApi`: ListHosts, GetHostTotals, MuteHost, UnmuteHost
+- `datadogV1.TagsApi`: ListHostTags, GetHostTags, CreateHostTags, UpdateHostTags, DeleteHostTags
+
 ## Code Style
 
 ### Imports

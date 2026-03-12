@@ -267,6 +267,33 @@ Show output fields: ID, Date, Tags, Message
 Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
 Default `--from` is `now-24h`, default `--to` is `now`.
 
+### hosts
+
+List and manage Datadog hosts and their tags.
+
+```
+datadog-cli hosts list [--filter <query>] [--from <unix>] [--count <n>] [--start <n>]
+datadog-cli hosts totals
+datadog-cli hosts mute --name <hostname> [--message <text>] [--end <unix>] [--override]
+datadog-cli hosts unmute --name <hostname>
+datadog-cli hosts tags list [--source <source>]
+datadog-cli hosts tags show --name <hostname> [--source <source>]
+datadog-cli hosts tags create --name <hostname> --tags <tag1,tag2> [--source <source>]
+datadog-cli hosts tags update --name <hostname> --tags <tag1,tag2> [--source <source>]
+datadog-cli hosts tags delete --name <hostname> --yes [--source <source>]
+```
+
+List output columns: `NAME | ID | ALIASES | APPS | SOURCES | UP | LAST_REPORTED`
+
+Totals output columns: `TOTAL_ACTIVE | TOTAL_UP`
+
+`--filter` accepts Datadog host search query (e.g. `env:prod`).
+`--from` accepts a Unix timestamp; only hosts active since that time are returned.
+`--tags` accepts a comma-separated list of `key:value` tag pairs.
+`--source` filters tags by source identifier (e.g. `users`, `datadog`, `chef`).
+`--end` accepts a Unix timestamp for when the mute expires.
+`--override` allows muting a host that is already muted.
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
