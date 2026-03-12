@@ -340,9 +340,9 @@ func TestAPMTailServiceFlag(t *testing.T) {
 	if len(reqs) == 0 {
 		t.Fatal("no requests made")
 	}
-	// --service checkout should produce a filter query containing service:checkout
-	if got := reqs[0].URL.Query().Get("filter[query]"); !strings.Contains(got, "service:checkout") {
-		t.Errorf("filter[query] = %q, want it to contain service:checkout", got)
+	// --service checkout should produce a filter query containing service:"checkout"
+	if got := reqs[0].URL.Query().Get("filter[query]"); !strings.Contains(got, `service:"checkout"`) {
+		t.Errorf("filter[query] = %q, want it to contain service:\"checkout\"", got)
 	}
 }
 
@@ -745,9 +745,14 @@ func TestAPMRetentionFilterListTableOutput(t *testing.T) {
 func TestAPMRetentionFilterShowOutput(t *testing.T) {
 	t.Parallel()
 
-	var capturedPath string
+	var (
+		mu           sync.Mutex
+		capturedPath string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		capturedPath = r.URL.Path
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRetentionFilterGetResponse) //nolint:errcheck
 	}))
@@ -759,8 +764,11 @@ func TestAPMRetentionFilterShowOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(capturedPath, "rf-1") {
-		t.Errorf("request path %q does not contain filter id", capturedPath)
+	mu.Lock()
+	path := capturedPath
+	mu.Unlock()
+	if !strings.Contains(path, "rf-1") {
+		t.Errorf("request path %q does not contain filter id", path)
 	}
 
 	out := buf.String()
@@ -902,9 +910,14 @@ func TestAPMRetentionFilterDeleteRequiresYes(t *testing.T) {
 func TestAPMRetentionFilterDeleteWithYes(t *testing.T) {
 	t.Parallel()
 
-	var capturedPath string
+	var (
+		mu           sync.Mutex
+		capturedPath string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		capturedPath = r.URL.Path
+		mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -915,8 +928,11 @@ func TestAPMRetentionFilterDeleteWithYes(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(capturedPath, "rf-1") {
-		t.Errorf("path %q does not contain rf-1", capturedPath)
+	mu.Lock()
+	path := capturedPath
+	mu.Unlock()
+	if !strings.Contains(path, "rf-1") {
+		t.Errorf("path %q does not contain rf-1", path)
 	}
 	if out := buf.String(); !strings.Contains(out, "deleted") {
 		t.Errorf("output missing 'deleted': %s", out)
@@ -1025,9 +1041,14 @@ func TestAPMSpanMetricListTableOutput(t *testing.T) {
 func TestAPMSpanMetricShowOutput(t *testing.T) {
 	t.Parallel()
 
-	var capturedPath string
+	var (
+		mu           sync.Mutex
+		capturedPath string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		capturedPath = r.URL.Path
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockSpanMetricGetResponse) //nolint:errcheck
 	}))
@@ -1039,8 +1060,11 @@ func TestAPMSpanMetricShowOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(capturedPath, "sm.count") {
-		t.Errorf("request path %q does not contain metric id", capturedPath)
+	mu.Lock()
+	path := capturedPath
+	mu.Unlock()
+	if !strings.Contains(path, "sm.count") {
+		t.Errorf("request path %q does not contain metric id", path)
 	}
 
 	out := buf.String()
@@ -1185,9 +1209,14 @@ func TestAPMSpanMetricDeleteRequiresYes(t *testing.T) {
 func TestAPMSpanMetricDeleteWithYes(t *testing.T) {
 	t.Parallel()
 
-	var capturedPath string
+	var (
+		mu           sync.Mutex
+		capturedPath string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		capturedPath = r.URL.Path
+		mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer srv.Close()
@@ -1198,8 +1227,11 @@ func TestAPMSpanMetricDeleteWithYes(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(capturedPath, "sm.count") {
-		t.Errorf("path %q does not contain sm.count", capturedPath)
+	mu.Lock()
+	path := capturedPath
+	mu.Unlock()
+	if !strings.Contains(path, "sm.count") {
+		t.Errorf("path %q does not contain sm.count", path)
 	}
 	if out := buf.String(); !strings.Contains(out, "deleted") {
 		t.Errorf("output missing 'deleted': %s", out)

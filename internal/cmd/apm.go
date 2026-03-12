@@ -219,7 +219,7 @@ func newAPMTailCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 			// build effective query
 			effectiveQuery := query
 			if service != "" {
-				q := "service:" + service
+				q := `service:"` + service + `"`
 				if effectiveQuery != "" {
 					q = effectiveQuery + " " + q
 				}
