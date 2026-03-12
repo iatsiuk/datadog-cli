@@ -1661,7 +1661,7 @@ func newRUMPlaylistAddSessionCmd(mkAPI func() (*rumPlaylistsAPI, error)) *cobra.
 				return err
 			}
 			sessionID := args[1]
-			ts := time.Now().Unix()
+			ts := time.Now().UnixMilli()
 
 			papi, err := mkAPI()
 			if err != nil {
@@ -2335,7 +2335,10 @@ func newRUMAudienceConnectionsCreateCmd(mkAPI func() (*rumAudienceAPI, error)) *
 }
 
 func newRUMAudienceConnectionsUpdateCmd(mkAPI func() (*rumAudienceAPI, error)) *cobra.Command {
-	var entity string
+	var (
+		entity         string
+		fieldsToDelete string
+	)
 	cmd := &cobra.Command{
 		Use:   "update <id>",
 		Short: "Update an audience data connection",
@@ -2351,6 +2354,15 @@ func newRUMAudienceConnectionsUpdateCmd(mkAPI func() (*rumAudienceAPI, error)) *
 			}
 
 			attrs := datadogV2.NewUpdateConnectionRequestDataAttributes()
+			if fieldsToDelete != "" {
+				var names []string
+				for _, s := range strings.Split(fieldsToDelete, ",") {
+					if s = strings.TrimSpace(s); s != "" {
+						names = append(names, s)
+					}
+				}
+				attrs.SetFieldsToDelete(names)
+			}
 			data := datadogV2.NewUpdateConnectionRequestData(connectionID, datadogV2.UPDATECONNECTIONREQUESTDATATYPE_CONNECTION_ID)
 			data.SetAttributes(*attrs)
 			body := datadogV2.NewUpdateConnectionRequest()
@@ -2368,6 +2380,7 @@ func newRUMAudienceConnectionsUpdateCmd(mkAPI func() (*rumAudienceAPI, error)) *
 		},
 	}
 	cmd.Flags().StringVar(&entity, "entity", "", "entity name (required)")
+	cmd.Flags().StringVar(&fieldsToDelete, "fields-to-delete", "", "comma-separated field names to delete")
 	return cmd
 }
 

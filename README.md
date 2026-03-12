@@ -179,13 +179,13 @@ dd rum app update <id> [--name <name>] [--type <type>]
 dd rum app delete <id> --yes
 dd rum metric list
 dd rum metric show <id>
-dd rum metric create --id <id> --compute-type <count|distribution> [--path <attr>] --filter <query> [--group-by <facets>]
+dd rum metric create --id <id> --compute <aggregation>[:<path>] [--filter <query>] [--group-by <facets>]
 dd rum metric update <id> [--filter <query>] [--group-by <facets>]
 dd rum metric delete <id> --yes
 dd rum retention-filter list --app <app-id>
 dd rum retention-filter show --app <app-id> <filter-id>
-dd rum retention-filter create --app <app-id> --name <name> --filter <query> --rate <0.0-1.0>
-dd rum retention-filter update --app <app-id> <filter-id> [--name <name>] [--filter <query>] [--rate <0.0-1.0>]
+dd rum retention-filter create --app <app-id> --name <name> [--query <query>] [--sample-rate <0.1-100>]
+dd rum retention-filter update --app <app-id> <filter-id> [--name <name>] [--query <query>] [--sample-rate <0.1-100>]
 dd rum retention-filter delete --app <app-id> <filter-id> --yes
 dd rum playlist list
 dd rum playlist show <id>
@@ -196,8 +196,8 @@ dd rum playlist sessions <id>
 dd rum playlist add-session <playlist-id> <session-id>
 dd rum playlist remove-session <playlist-id> <session-id>
 dd rum heatmap list --view <view-name>
-dd rum heatmap create --view <view-name> --from <time> --to <time>
-dd rum heatmap update <id> [--view <view-name>] [--from <time>] [--to <time>]
+dd rum heatmap create --app <app-id> --device <device> --event <event-id> --name <name> --view <view-name> --start <epoch-ms> [--session <session-id>] [--view-id <view-id>]
+dd rum heatmap update <id> --event <event-id> --start <epoch-ms> [--session <session-id>] [--view-id <view-id>]
 dd rum heatmap delete <id> --yes
 dd rum session segments --view <view-id> --session <session-id>
 dd rum session watchers <session-id>
