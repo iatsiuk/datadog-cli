@@ -241,10 +241,10 @@ func newEventsShowCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 			fields := []struct{ k, v string }{
 				{"ID", event.GetId()},
 				{"Title", title},
+				{"Text", attrs.GetMessage()},
 				{"Date", attrs.GetTimestamp()},
-				{"Alert Type", alertType},
 				{"Tags", strings.Join(attrs.GetTags(), ", ")},
-				{"Message", attrs.GetMessage()},
+				{"Alert Type", alertType},
 				{"URL", url},
 			}
 			w := cmd.OutOrStdout()
