@@ -55,10 +55,10 @@
 - [x] run `make build` -- must pass
 
 ### Task 3: Host totals with tests
-- [ ] write tests for `hosts totals` -- display total/active host counts
-- [ ] write tests for `hosts totals` -- JSON output
-- [ ] implement `newHostsTotalsCmd` -- call `GetHostTotals`, display total_up/total_active
-- [ ] run `make build` -- must pass
+- [x] write tests for `hosts totals` -- display total/active host counts
+- [x] write tests for `hosts totals` -- JSON output
+- [x] implement `newHostsTotalsCmd` -- call `GetHostTotals`, display total_up/total_active
+- [x] run `make build` -- must pass
 
 ### Task 4: Host mute/unmute with tests
 - [ ] write tests for `hosts mute --name <hostname>` -- success, optional `--end`, `--message`, `--override`

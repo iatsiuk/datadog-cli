@@ -256,6 +256,69 @@ func TestHostsListFrom(t *testing.T) {
 	}
 }
 
+const mockHostsTotalsResponse = `{"total_active":42,"total_up":38}`
+
+func buildHostsTotalsCmd(mkAPI func() (*hostsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	hosts := &cobra.Command{Use: "hosts"}
+	hosts.AddCommand(newHostsTotalsCmd(mkAPI))
+	root.AddCommand(hosts)
+	return root, buf
+}
+
+func TestHostsTotalsTable(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHostsTotalsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildHostsTotalsCmd(newTestHostsAPI(srv))
+	root.SetArgs([]string{"hosts", "totals"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "42") {
+		t.Errorf("expected total_active in output, got: %s", out)
+	}
+	if !strings.Contains(out, "38") {
+		t.Errorf("expected total_up in output, got: %s", out)
+	}
+}
+
+func TestHostsTotalsJSON(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHostsTotalsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildHostsTotalsCmd(newTestHostsAPI(srv))
+	root.SetArgs([]string{"--json", "hosts", "totals"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON output: %v\noutput: %s", err, buf.String())
+	}
+	if got := result["total_active"]; got != float64(42) {
+		t.Errorf("total_active = %v, want 42", got)
+	}
+	if got := result["total_up"]; got != float64(38) {
+		t.Errorf("total_up = %v, want 38", got)
+	}
+}
+
 func TestHostsListEmpty(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -56,8 +56,48 @@ func NewHostsCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newHostsListCmd(defaultHostsAPI))
+	cmd.AddCommand(newHostsTotalsCmd(defaultHostsAPI))
 	cmd.AddCommand(tagsCmd)
 	return cmd
+}
+
+func newHostsTotalsCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "totals",
+		Short: "Get total and active host counts",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			hapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := hapi.api.GetHostTotals(hapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get host totals: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"TOTAL_ACTIVE", "TOTAL_UP"}
+			rows := [][]string{
+				{
+					strconv.FormatInt(resp.GetTotalActive(), 10),
+					strconv.FormatInt(resp.GetTotalUp(), 10),
+				},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
 }
 
 func newHostsListCmd(mkAPI func() (*hostsAPI, error)) *cobra.Command {
