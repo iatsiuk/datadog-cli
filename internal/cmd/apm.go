@@ -313,8 +313,7 @@ func newAPMTailCmd(mkAPI func() (*spansAPI, error)) *cobra.Command {
 						return nil
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
-					prevSeen = currSeen
-					currSeen = nextSeen
+					// don't advance dedup window on error: nextSeen may be partial
 				} else {
 					prevSeen = currSeen
 					currSeen = nextSeen
@@ -509,6 +508,18 @@ func newAPMServicesCmd(mkAPI func() (*apmAPI, error)) *cobra.Command {
 			data := resp.GetData()
 			attrs := data.GetAttributes()
 			services := attrs.GetServices()
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				if services == nil {
+					services = []string{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), services)
+			}
+
 			headers := []string{"SERVICE"}
 			rows := make([][]string, len(services))
 			for i, svc := range services {
