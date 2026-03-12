@@ -60,8 +60,10 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 			}
 
 			ctx := eapi.ctx
-			seen := make(map[string]bool)
 			from := time.Now().Add(-interval)
+			// prevIDs holds IDs from the previous poll to deduplicate events
+			// in the small overlap window between consecutive polls.
+			prevIDs := make(map[string]bool)
 
 			for {
 				fromStr := from.UTC().Format(time.RFC3339)
@@ -86,12 +88,13 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 					return fmt.Errorf("list events: %w", err)
 				}
 
+				currIDs := make(map[string]bool)
 				for _, event := range resp.GetData() {
 					id := event.GetId()
-					if seen[id] {
+					if id == "" || prevIDs[id] {
 						continue
 					}
-					seen[id] = true
+					currIDs[id] = true
 					attrs := event.GetAttributes()
 					ts := ""
 					if t := attrs.Timestamp; t != nil {
@@ -103,6 +106,8 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 					tags := strings.Join(attrs.GetTags(), ", ")
 					fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", ts, title, source, tags) //nolint:errcheck
 				}
+
+				prevIDs = currIDs
 
 				select {
 				case <-ctx.Done():
