@@ -456,9 +456,11 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 			}
 
 			if tags != "" {
-				tagList := strings.Split(tags, ",")
-				for i := range tagList {
-					tagList[i] = strings.TrimSpace(tagList[i])
+				var tagList []string
+				for _, t := range strings.Split(tags, ",") {
+					if t = strings.TrimSpace(t); t != "" {
+						tagList = append(tagList, t)
+					}
 				}
 				body.Tags = *datadog.NewNullableList(&tagList)
 			}
@@ -549,6 +551,9 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 				if err := json.Unmarshal([]byte(bodyJSON), &body); err != nil {
 					return fmt.Errorf("parse --body: %w", err)
 				}
+				if body.Title == "" {
+					return fmt.Errorf("--body must include a non-empty title")
+				}
 				if !body.LayoutType.IsValid() {
 					return fmt.Errorf("--body must include a valid layout_type (ordered or free)")
 				}
@@ -573,9 +578,11 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 					body.Description = *datadog.NewNullableString(&description)
 				}
 				if tags != "" {
-					tagList := strings.Split(tags, ",")
-					for i := range tagList {
-						tagList[i] = strings.TrimSpace(tagList[i])
+					var tagList []string
+					for _, t := range strings.Split(tags, ",") {
+						if t = strings.TrimSpace(t); t != "" {
+							tagList = append(tagList, t)
+						}
 					}
 					body.Tags = *datadog.NewNullableList(&tagList)
 				}
