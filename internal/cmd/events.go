@@ -61,7 +61,7 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 
 			ctx := eapi.ctx
 			seen := make(map[string]bool)
-			from := time.Now()
+			from := time.Now().Add(-interval)
 
 			for {
 				fromStr := from.UTC().Format(time.RFC3339)
