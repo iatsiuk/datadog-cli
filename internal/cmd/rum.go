@@ -608,7 +608,7 @@ func newRUMAppUpdateCmd(mkAPI func() (*rumAPI, error)) *cobra.Command {
 			if cmd.Flags().Changed("name") {
 				updateAttrs.SetName(name)
 			}
-			if appType != "" {
+			if cmd.Flags().Changed("type") {
 				updateAttrs.SetType(appType)
 			}
 
@@ -1225,7 +1225,7 @@ func newRUMRetentionFilterUpdateCmd(mkAPI func() (*rumRetentionFiltersAPI, error
 			if cmd.Flags().Changed("name") {
 				attrs.SetName(name)
 			}
-			if eventType != "" {
+			if cmd.Flags().Changed("event-type") {
 				et, err := datadogV2.NewRumRetentionFilterEventTypeFromValue(eventType)
 				if err != nil {
 					return fmt.Errorf("--event-type: %w", err)
@@ -1544,7 +1544,7 @@ func newRUMPlaylistUpdateCmd(mkAPI func() (*rumPlaylistsAPI, error)) *cobra.Comm
 			currentData := current.GetData()
 			currentAttrs := currentData.GetAttributes()
 			updatedName := currentAttrs.GetName()
-			if name != "" {
+			if cmd.Flags().Changed("name") {
 				updatedName = name
 			}
 			attrs := datadogV2.NewPlaylistDataAttributes(updatedName)
