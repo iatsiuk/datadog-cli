@@ -55,7 +55,7 @@ func newTestLogsAPIWithCtx(srv *httptest.Server, ctx context.Context) func() (*l
 
 // buildSearchCmd sets up a root -> logs -> search command tree for testing.
 func buildSearchCmd(mkAPI func() (*logsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -222,7 +222,7 @@ func TestLogsSearchDefaultFrom(t *testing.T) {
 
 // buildTailCmd sets up a root -> logs -> tail command tree for testing.
 func buildTailCmd(mkAPI func() (*logsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)

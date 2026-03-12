@@ -35,7 +35,7 @@ func newTestLogsPipelineAPI(srv *httptest.Server) func() (*logsPipelineAPI, erro
 }
 
 func buildPipelineCmd(mkAPI func() (*logsPipelineAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)

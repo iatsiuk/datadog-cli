@@ -44,7 +44,7 @@ func newTestLogsRQAPI(srv *httptest.Server) func() (*logsRestrictionQueryAPI, er
 }
 
 func buildRQCmd(mkAPI func() (*logsRestrictionQueryAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)

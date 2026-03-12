@@ -37,7 +37,7 @@ func newTestMetricsV1API(srv *httptest.Server) func() (*metricsV1API, error) {
 }
 
 func buildMetricsQueryCmd(mkAPI func() (*metricsV1API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -166,7 +166,7 @@ func TestMetricsQueryJSONOutput(t *testing.T) {
 }
 
 func buildMetricsSearchCmd(mkAPI func() (*metricsV1API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -178,7 +178,7 @@ func buildMetricsSearchCmd(mkAPI func() (*metricsV1API, error)) (*cobra.Command,
 }
 
 func buildMetricsListCmd(mkAPI func() (*metricsV1API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -387,7 +387,7 @@ func newTestMetricsV2API(srv *httptest.Server) func() (*metricsV2API, error) {
 }
 
 func buildMetricsScalarCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -515,7 +515,7 @@ func TestMetricsScalarJSONOutput(t *testing.T) {
 }
 
 func buildMetricsTimeseriesCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -638,7 +638,7 @@ func TestMetricsTimeseriesJSONOutput(t *testing.T) {
 }
 
 func buildMetricsSubmitCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -873,7 +873,7 @@ func TestMetricsSubmitMultiplePoints(t *testing.T) {
 }
 
 func buildMetricsMetadataCmd(mkAPI func() (*metricsV1API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1046,7 +1046,7 @@ func TestMetricsQueryRelativeTime(t *testing.T) {
 }
 
 func buildMetricsTagConfigCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1385,7 +1385,7 @@ func TestMetricsTagConfigDeleteRequiresArg(t *testing.T) {
 }
 
 func buildMetricsTagsCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1397,7 +1397,7 @@ func buildMetricsTagsCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *
 }
 
 func buildMetricsVolumesCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1409,7 +1409,7 @@ func buildMetricsVolumesCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command
 }
 
 func buildMetricsAssetsCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1676,7 +1676,7 @@ func TestMetricsAssetsRequiresArg(t *testing.T) {
 // metrics estimate tests
 
 func buildMetricsEstimateCmd(mkAPI func() (*metricsV2API, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)

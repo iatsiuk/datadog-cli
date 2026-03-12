@@ -55,7 +55,7 @@ func newTestEventsAPI(srv *httptest.Server) func() (*eventsAPI, error) {
 }
 
 func buildEventsListCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -221,7 +221,7 @@ func TestEventsListJSONOutput(t *testing.T) {
 }
 
 func buildEventsSearchCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -330,7 +330,7 @@ func TestEventsSearchJSONOutput(t *testing.T) {
 }
 
 func buildEventsShowCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -442,7 +442,7 @@ func TestEventsShowIDRequired(t *testing.T) {
 }
 
 func buildEventsCreateCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -657,7 +657,7 @@ func TestEventsListDefaultFrom(t *testing.T) {
 }
 
 func buildEventsTailCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)

@@ -35,7 +35,7 @@ func newTestLogsIndexAPI(srv *httptest.Server) func() (*logsIndexAPI, error) {
 }
 
 func buildIndexCmd(mkAPI func() (*logsIndexAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)

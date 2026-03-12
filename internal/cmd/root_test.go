@@ -7,8 +7,8 @@ import (
 func TestNewRootCommand_UseAndVersion(t *testing.T) {
 	t.Parallel()
 	cmd := NewRootCommand("1.2.3")
-	if cmd.Use != "dd" {
-		t.Errorf("Use = %q, want %q", cmd.Use, "dd")
+	if cmd.Use != "datadog-cli" {
+		t.Errorf("Use = %q, want %q", cmd.Use, "datadog-cli")
 	}
 	if cmd.Version != "1.2.3" {
 		t.Errorf("Version = %q, want %q", cmd.Version, "1.2.3")

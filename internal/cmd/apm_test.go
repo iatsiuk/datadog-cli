@@ -54,7 +54,7 @@ func newTestSpansAPIWithCtx(srv *httptest.Server, ctx context.Context) func() (*
 }
 
 func buildAPMSearchCmd(mkAPI func() (*spansAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -256,7 +256,7 @@ func TestAPMSearchDefaultFrom(t *testing.T) {
 }
 
 func buildAPMTailCmd(mkAPI func() (*spansAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -392,7 +392,7 @@ const mockSpansAggregateResponse = `{
 }`
 
 func buildAPMAggregateCmd(mkAPI func() (*spansAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -551,7 +551,7 @@ func newTestAPMAPI(srv *httptest.Server) func() (*apmAPI, error) {
 }
 
 func buildAPMServicesCmd(mkAPI func() (*apmAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -708,7 +708,7 @@ func newTestRetentionFiltersAPI(srv *httptest.Server) func() (*retentionFiltersA
 }
 
 func buildAPMRetentionFilterCmd(mkAPI func() (*retentionFiltersAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1004,7 +1004,7 @@ func newTestSpansMetricsAPI(srv *httptest.Server) func() (*spansMetricsAPI, erro
 }
 
 func buildAPMSpanMetricCmd(mkAPI func() (*spansMetricsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)

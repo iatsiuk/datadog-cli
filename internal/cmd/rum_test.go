@@ -54,7 +54,7 @@ func newTestRUMAPI(srv *httptest.Server) func() (*rumAPI, error) {
 }
 
 func buildRUMSearchCmd(mkAPI func() (*rumAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -270,7 +270,7 @@ const mockRUMAggregateResponse = `{
 }`
 
 func buildRUMAggregateCmd(mkAPI func() (*rumAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -433,7 +433,7 @@ const mockRUMAppResponse = `{
 }`
 
 func buildRUMAppCmd(mkAPI func() (*rumAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -698,7 +698,7 @@ func newTestRUMMetricsAPI(srv *httptest.Server) func() (*rumMetricsAPI, error) {
 }
 
 func buildRUMMetricCmd(mkAPI func() (*rumMetricsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -935,7 +935,7 @@ func newTestRUMRetentionFiltersAPI(srv *httptest.Server) func() (*rumRetentionFi
 }
 
 func buildRUMRetentionFilterCmd(mkAPI func() (*rumRetentionFiltersAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1203,7 +1203,7 @@ func newTestRUMPlaylistsAPI(srv *httptest.Server) func() (*rumPlaylistsAPI, erro
 }
 
 func buildRUMPlaylistCmd(mkAPI func() (*rumPlaylistsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1605,7 +1605,7 @@ func newTestRUMHeatmapsAPI(srv *httptest.Server) func() (*rumHeatmapsAPI, error)
 }
 
 func buildRUMHeatmapCmd(mkAPI func() (*rumHeatmapsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -1890,7 +1890,7 @@ func newTestRUMSessionsAPI(srv *httptest.Server) func() (*rumSessionsAPI, error)
 }
 
 func buildRUMSessionCmd(mkAPI func() (*rumSessionsAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
@@ -2156,7 +2156,7 @@ func newTestRUMAudienceAPI(srv *httptest.Server) func() (*rumAudienceAPI, error)
 }
 
 func buildRUMAudienceCmd(mkAPI func() (*rumAudienceAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "dd"}
+	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)

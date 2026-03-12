@@ -7,7 +7,7 @@ import (
 // NewRootCommand returns the root cobra command.
 func NewRootCommand(version string) *cobra.Command {
 	root := &cobra.Command{
-		Use:     "dd",
+		Use:     "datadog-cli",
 		Short:   "Datadog CLI",
 		Version: version,
 	}
