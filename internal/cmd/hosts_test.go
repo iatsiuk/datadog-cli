@@ -638,6 +638,134 @@ func TestTagsCreateMissingFlags(t *testing.T) {
 	}
 }
 
+func buildTagsUpdateCmd(mkAPI func() (*tagsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	hosts := &cobra.Command{Use: "hosts"}
+	tagsCmd := &cobra.Command{Use: "tags"}
+	tagsCmd.AddCommand(newTagsUpdateCmd(mkAPI))
+	hosts.AddCommand(tagsCmd)
+	root.AddCommand(hosts)
+	return root, buf
+}
+
+func buildTagsDeleteCmd(mkAPI func() (*tagsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	hosts := &cobra.Command{Use: "hosts"}
+	tagsCmd := &cobra.Command{Use: "tags"}
+	tagsCmd.AddCommand(newTagsDeleteCmd(mkAPI))
+	hosts.AddCommand(tagsCmd)
+	root.AddCommand(hosts)
+	return root, buf
+}
+
+func TestTagsUpdateSuccess(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagsHostResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildTagsUpdateCmd(newTestTagsAPI(srv))
+	root.SetArgs([]string{"hosts", "tags", "update", "--name", "web-01", "--tags", "env:prod,role:frontend"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "web-01") {
+		t.Errorf("expected hostname in output, got: %s", out)
+	}
+
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
+
+	var reqBody map[string]interface{}
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	tagsList, ok := reqBody["tags"].([]interface{})
+	if !ok {
+		t.Fatalf("expected tags array in request body, got: %v", reqBody)
+	}
+	if len(tagsList) != 2 {
+		t.Errorf("expected 2 tags in request, got %d", len(tagsList))
+	}
+}
+
+func TestTagsUpdateMissingFlags(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTagsHostResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"missing name", []string{"hosts", "tags", "update", "--tags", "env:prod"}},
+		{"missing tags", []string{"hosts", "tags", "update", "--name", "web-01"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildTagsUpdateCmd(newTestTagsAPI(srv))
+			root.SetArgs(tc.args)
+			if err := root.Execute(); err == nil {
+				t.Errorf("expected error for %s, got nil", tc.name)
+			}
+		})
+	}
+}
+
+func TestTagsDeleteSuccess(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildTagsDeleteCmd(newTestTagsAPI(srv))
+	root.SetArgs([]string{"hosts", "tags", "delete", "--name", "web-01", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestTagsDeleteMissingYes(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildTagsDeleteCmd(newTestTagsAPI(srv))
+	root.SetArgs([]string{"hosts", "tags", "delete", "--name", "web-01"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --yes is missing, got nil")
+	}
+}
+
 const mockTagsListResponse = `{"tags":{"env:prod":["web-01","web-02"],"role:frontend":["web-01"]}}`
 
 func buildTagsListCmd(mkAPI func() (*tagsAPI, error)) (*cobra.Command, *bytes.Buffer) {

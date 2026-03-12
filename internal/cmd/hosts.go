@@ -57,6 +57,8 @@ func NewHostsCommand() *cobra.Command {
 	tagsCmd.AddCommand(newTagsListCmd(defaultTagsAPI))
 	tagsCmd.AddCommand(newTagsShowCmd(defaultTagsAPI))
 	tagsCmd.AddCommand(newTagsCreateCmd(defaultTagsAPI))
+	tagsCmd.AddCommand(newTagsUpdateCmd(defaultTagsAPI))
+	tagsCmd.AddCommand(newTagsDeleteCmd(defaultTagsAPI))
 
 	cmd.AddCommand(newHostsListCmd(defaultHostsAPI))
 	cmd.AddCommand(newHostsTotalsCmd(defaultHostsAPI))
@@ -376,6 +378,106 @@ func newTagsCreateCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&source, "source", "", "tag source (e.g. users, datadog, chef)")
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("tags")
+	return cmd
+}
+
+func newTagsUpdateCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
+	var (
+		name   string
+		tags   string
+		source string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update tags for a host (replaces existing tags)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			tagList := strings.Split(tags, ",")
+			body := datadogV1.NewHostTags()
+			body.SetTags(tagList)
+
+			opts := datadogV1.NewUpdateHostTagsOptionalParameters()
+			if source != "" {
+				opts = opts.WithSource(source)
+			}
+
+			resp, httpResp, err := tapi.api.UpdateHostTags(tapi.ctx, name, *body, *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update host tags: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"HOST", "TAGS"}
+			rows := [][]string{{resp.GetHost(), strings.Join(resp.GetTags(), ", ")}}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "hostname to update tags for (required)")
+	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated list of tags (required)")
+	cmd.Flags().StringVar(&source, "source", "", "tag source (e.g. users, datadog, chef)")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("tags")
+	return cmd
+}
+
+func newTagsDeleteCmd(mkAPI func() (*tagsAPI, error)) *cobra.Command {
+	var (
+		name   string
+		yes    bool
+		source string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete all tags from a host",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !yes {
+				return fmt.Errorf("must pass --yes to confirm deletion")
+			}
+
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			opts := datadogV1.NewDeleteHostTagsOptionalParameters()
+			if source != "" {
+				opts = opts.WithSource(source)
+			}
+
+			httpResp, err := tapi.api.DeleteHostTags(tapi.ctx, name, *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete host tags: %w", err)
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "hostname to delete tags from (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	cmd.Flags().StringVar(&source, "source", "", "tag source to delete (e.g. users, datadog, chef)")
+	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
 

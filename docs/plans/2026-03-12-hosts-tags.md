@@ -86,12 +86,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 7: Tags update/delete with tests
-- [ ] write tests for `hosts tags update --name <hostname> --tags <tag1,tag2>` -- capture request body
-- [ ] write tests for `hosts tags delete --name <hostname> --yes` -- success
-- [ ] write tests for `hosts tags delete` -- missing `--yes` flag rejected
-- [ ] implement `newTagsUpdateCmd` -- call `UpdateHostTags` with tag list and optional source
-- [ ] implement `newTagsDeleteCmd` -- require `--yes`, call `DeleteHostTags`
-- [ ] run `make build` -- must pass
+- [x] write tests for `hosts tags update --name <hostname> --tags <tag1,tag2>` -- capture request body
+- [x] write tests for `hosts tags delete --name <hostname> --yes` -- success
+- [x] write tests for `hosts tags delete` -- missing `--yes` flag rejected
+- [x] implement `newTagsUpdateCmd` -- call `UpdateHostTags` with tag list and optional source
+- [x] implement `newTagsDeleteCmd` -- require `--yes`, call `DeleteHostTags`
+- [x] run `make build` -- must pass
 
 ### Task 8: Verify acceptance criteria
 - [ ] verify all host operations: list, totals, mute, unmute
