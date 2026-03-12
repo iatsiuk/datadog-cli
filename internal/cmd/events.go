@@ -91,10 +91,12 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 				currIDs := make(map[string]bool)
 				for _, event := range resp.GetData() {
 					id := event.GetId()
+					if id != "" {
+						currIDs[id] = true
+					}
 					if id == "" || prevIDs[id] {
 						continue
 					}
-					currIDs[id] = true
 					attrs := event.GetAttributes()
 					ts := ""
 					if t := attrs.Timestamp; t != nil {
