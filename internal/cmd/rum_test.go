@@ -1634,3 +1634,247 @@ func TestRUMHeatmapDeleteRequiresYes(t *testing.T) {
 		t.Fatal("expected error without --yes flag")
 	}
 }
+
+// --- session tests ---
+
+const mockWatchersResponse = `{
+	"data": [
+		{
+			"id": "watcher-1",
+			"type": "rum_replay_watcher",
+			"attributes": {
+				"handle": "user@example.com",
+				"last_watched_at": "2024-01-15T10:00:00Z",
+				"watch_count": 3
+			}
+		}
+	]
+}`
+
+const mockWatchResponse = `{
+	"data": {
+		"id": "watch-1",
+		"type": "rum_replay_watch",
+		"attributes": {
+			"application_id": "app-abc",
+			"event_id": "evt-1",
+			"timestamp": "2024-01-15T10:00:00Z"
+		}
+	}
+}`
+
+const mockHistoryResponse = `{
+	"data": [
+		{
+			"id": "sess-hist-1",
+			"type": "rum_replay_viewership_history_session",
+			"attributes": {
+				"last_watched_at": "2024-01-15T10:00:00Z",
+				"track": "replay"
+			}
+		}
+	]
+}`
+
+func newTestRUMSessionsAPI(srv *httptest.Server) func() (*rumSessionsAPI, error) {
+	return func() (*rumSessionsAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &rumSessionsAPI{
+			sessions:   datadogV2.NewRumReplaySessionsApi(c),
+			viewership: datadogV2.NewRumReplayViewershipApi(c),
+			ctx:        apiCtx,
+		}, nil
+	}
+}
+
+func buildRUMSessionCmd(mkAPI func() (*rumSessionsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	rum := &cobra.Command{Use: "rum"}
+	rum.AddCommand(newRUMSessionCmd(mkAPI))
+	root.AddCommand(rum)
+	return root, buf
+}
+
+func TestRUMSessionSegments(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		fmt.Fprint(w, "segment-data") //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMSessionCmd(newTestRUMSessionsAPI(srv))
+	root.SetArgs([]string{"rum", "session", "segments", "--view", "view-1", "--session", "sess-1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "segment-data") {
+		t.Errorf("output missing segment data:\n%s", buf.String())
+	}
+}
+
+func TestRUMSessionSegmentsRequiresFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMSessionCmd(newTestRUMSessionsAPI(srv))
+	root.SetArgs([]string{"rum", "session", "segments", "--view", "view-1"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --session flag")
+	}
+}
+
+func TestRUMSessionWatchersTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockWatchersResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMSessionCmd(newTestRUMSessionsAPI(srv))
+	root.SetArgs([]string{"rum", "session", "watchers", "sess-1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"HANDLE", "watcher-1", "user@example.com"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMSessionWatchersJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockWatchersResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMSessionCmd(newTestRUMSessionsAPI(srv))
+	root.SetArgs([]string{"rum", "session", "watchers", "sess-1", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d entries, want 1", len(result))
+	}
+}
+
+func TestRUMSessionWatch(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockWatchResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMSessionCmd(newTestRUMSessionsAPI(srv))
+	root.SetArgs([]string{"rum", "session", "watch", "sess-1", "--app", "app-abc", "--event", "evt-1"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(string(capturedBody), "app-abc") {
+		t.Errorf("request body missing app id: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "watch-1") {
+		t.Errorf("output missing watch id:\n%s", buf.String())
+	}
+}
+
+func TestRUMSessionWatchRequiresFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMSessionCmd(newTestRUMSessionsAPI(srv))
+	root.SetArgs([]string{"rum", "session", "watch", "sess-1", "--app", "app-abc"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --event flag")
+	}
+}
+
+func TestRUMSessionHistoryTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHistoryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMSessionCmd(newTestRUMSessionsAPI(srv))
+	root.SetArgs([]string{"rum", "session", "history"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"SESSION ID", "LAST WATCHED", "sess-hist-1", "replay"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMSessionHistoryJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockHistoryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMSessionCmd(newTestRUMSessionsAPI(srv))
+	root.SetArgs([]string{"rum", "session", "history", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d entries, want 1", len(result))
+	}
+}

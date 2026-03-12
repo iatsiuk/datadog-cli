@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
@@ -86,6 +87,25 @@ func defaultRUMHeatmapsAPI() (*rumHeatmapsAPI, error) {
 	return &rumHeatmapsAPI{api: datadogV2.NewRumReplayHeatmapsApi(c), ctx: ctx}, nil
 }
 
+type rumSessionsAPI struct {
+	sessions   *datadogV2.RumReplaySessionsApi
+	viewership *datadogV2.RumReplayViewershipApi
+	ctx        context.Context
+}
+
+func defaultRUMSessionsAPI() (*rumSessionsAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &rumSessionsAPI{
+		sessions:   datadogV2.NewRumReplaySessionsApi(c),
+		viewership: datadogV2.NewRumReplayViewershipApi(c),
+		ctx:        ctx,
+	}, nil
+}
+
 // NewRUMCommand returns the rum cobra command group.
 func NewRUMCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -99,6 +119,7 @@ func NewRUMCommand() *cobra.Command {
 	cmd.AddCommand(newRUMRetentionFilterCmd(defaultRUMRetentionFiltersAPI))
 	cmd.AddCommand(newRUMPlaylistCmd(defaultRUMPlaylistsAPI))
 	cmd.AddCommand(newRUMHeatmapCmd(defaultRUMHeatmapsAPI))
+	cmd.AddCommand(newRUMSessionCmd(defaultRUMSessionsAPI))
 	return cmd
 }
 
@@ -1928,6 +1949,215 @@ func newRUMHeatmapDeleteCmd(mkAPI func() (*rumHeatmapsAPI, error)) *cobra.Comman
 	}
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
+}
+
+func newRUMSessionCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "session",
+		Short: "Manage RUM replay sessions",
+	}
+	cmd.AddCommand(newRUMSessionSegmentsCmd(mkAPI))
+	cmd.AddCommand(newRUMSessionWatchersCmd(mkAPI))
+	cmd.AddCommand(newRUMSessionWatchCmd(mkAPI))
+	cmd.AddCommand(newRUMSessionHistoryCmd(mkAPI))
+	return cmd
+}
+
+func newRUMSessionSegmentsCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Command {
+	var (
+		viewID    string
+		sessionID string
+	)
+	cmd := &cobra.Command{
+		Use:   "segments",
+		Short: "Get segments for a RUM replay session view",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if viewID == "" {
+				return fmt.Errorf("--view is required")
+			}
+			if sessionID == "" {
+				return fmt.Errorf("--session is required")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			httpResp, err := sapi.sessions.GetSegments(sapi.ctx, viewID, sessionID)
+			if err != nil {
+				return fmt.Errorf("get segments: %w", err)
+			}
+			defer func() { _ = httpResp.Body.Close() }()
+
+			_, err = io.Copy(cmd.OutOrStdout(), httpResp.Body)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&viewID, "view", "", "view ID (required)")
+	cmd.Flags().StringVar(&sessionID, "session", "", "session ID (required)")
+	return cmd
+}
+
+func newRUMSessionWatchersCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "watchers <session-id>",
+		Short: "List watchers of a RUM replay session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sessionID := args[0]
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := sapi.viewership.ListRumReplaySessionWatchers(sapi.ctx, sessionID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list watchers: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				data := resp.GetData()
+				if data == nil {
+					data = []datadogV2.WatcherData{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"ID", "HANDLE", "LAST WATCHED", "WATCH COUNT"}
+			var rows [][]string
+			for _, w := range resp.GetData() {
+				id := ""
+				if w.Id != nil {
+					id = *w.Id
+				}
+				a := w.GetAttributes()
+				rows = append(rows, []string{
+					id,
+					a.GetHandle(),
+					a.GetLastWatchedAt().Format(time.RFC3339),
+					fmt.Sprintf("%d", a.GetWatchCount()),
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+}
+
+func newRUMSessionWatchCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Command {
+	var (
+		appID   string
+		eventID string
+	)
+	cmd := &cobra.Command{
+		Use:   "watch <session-id>",
+		Short: "Record a watch on a RUM replay session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			sessionID := args[0]
+			if appID == "" {
+				return fmt.Errorf("--app is required")
+			}
+			if eventID == "" {
+				return fmt.Errorf("--event is required")
+			}
+
+			attrs := datadogV2.NewWatchDataAttributes(appID, eventID, time.Now())
+			data := datadogV2.NewWatchDataWithDefaults()
+			data.SetAttributes(*attrs)
+			body := datadogV2.NewWatch(*data)
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := sapi.viewership.CreateRumReplaySessionWatch(sapi.ctx, sessionID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("watch session: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp.GetData())
+			}
+
+			d := resp.GetData()
+			a := d.GetAttributes()
+			id := ""
+			if d.Id != nil {
+				id = *d.Id
+			}
+			rows := [][]string{
+				{"ID", id},
+				{"APPLICATION", a.GetApplicationId()},
+				{"EVENT", a.GetEventId()},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+		},
+	}
+	cmd.Flags().StringVar(&appID, "app", "", "application ID (required)")
+	cmd.Flags().StringVar(&eventID, "event", "", "event ID (required)")
+	return cmd
+}
+
+func newRUMSessionHistoryCmd(mkAPI func() (*rumSessionsAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "history",
+		Short: "List RUM replay session viewership history",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+			resp, httpResp, err := sapi.viewership.ListRumReplayViewershipHistorySessions(sapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list history: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				data := resp.GetData()
+				if data == nil {
+					data = []datadogV2.ViewershipHistorySessionData{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"SESSION ID", "LAST WATCHED", "TRACK"}
+			var rows [][]string
+			for _, s := range resp.GetData() {
+				id := ""
+				if s.Id != nil {
+					id = *s.Id
+				}
+				a := s.GetAttributes()
+				rows = append(rows, []string{
+					id,
+					a.GetLastWatchedAt().Format(time.RFC3339),
+					a.GetTrack(),
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
 }
 
 // parseRUMMetricComputeSpec parses "count" or "sum:@metric.path" into aggregation type and path.
