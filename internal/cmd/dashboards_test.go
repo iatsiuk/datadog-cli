@@ -244,3 +244,171 @@ func TestDashboardsListEmpty(t *testing.T) {
 		t.Errorf("output missing headers:\n%s", out)
 	}
 }
+
+func buildDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	dashboards := &cobra.Command{Use: "dashboards"}
+	dashboards.AddCommand(newDashboardsCreateCmd(mkAPI))
+	root.AddCommand(dashboards)
+	return root, buf
+}
+
+const mockDashboardCreateResponse = `{
+	"id": "new-456",
+	"title": "New Dashboard",
+	"layout_type": "ordered",
+	"url": "/dashboard/new-456/new-dashboard",
+	"widgets": []
+}`
+
+func TestDashboardsCreateRequestBody(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := new(bytes.Buffer)
+		buf.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = buf.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildDashboardsCreateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{"dashboards", "create", "--title", "New Dashboard", "--layout-type", "ordered"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body JSON: %v", err)
+	}
+	if body["title"] != "New Dashboard" {
+		t.Errorf("request body title = %q, want %q", body["title"], "New Dashboard")
+	}
+	if body["layout_type"] != "ordered" {
+		t.Errorf("request body layout_type = %q, want %q", body["layout_type"], "ordered")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "new-456") {
+		t.Errorf("output missing created dashboard id:\n%s", out)
+	}
+}
+
+func TestDashboardsCreateWithOptionalFlags(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := new(bytes.Buffer)
+		b.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = b.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildDashboardsCreateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{
+		"dashboards", "create",
+		"--title", "New Dashboard",
+		"--layout-type", "ordered",
+		"--description", "My desc",
+		"--tags", "team:infra,env:prod",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	if body["description"] != "My desc" {
+		t.Errorf("description = %q, want %q", body["description"], "My desc")
+	}
+	tags, ok := body["tags"].([]interface{})
+	if !ok || len(tags) != 2 {
+		t.Errorf("expected 2 tags, got %v", body["tags"])
+	}
+}
+
+func TestDashboardsCreateWithWidgetsJSON(t *testing.T) {
+	t.Parallel()
+
+	widgetsJSON := `[{"definition":{"type":"note","content":"hello"}}]`
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := new(bytes.Buffer)
+		b.ReadFrom(r.Body) //nolint:errcheck
+		capturedBody = b.Bytes()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockDashboardCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildDashboardsCreateCmd(newTestDashboardsAPI(srv))
+	root.SetArgs([]string{
+		"dashboards", "create",
+		"--title", "New Dashboard",
+		"--layout-type", "ordered",
+		"--widgets-json", widgetsJSON,
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	widgets, ok := body["widgets"].([]interface{})
+	if !ok || len(widgets) != 1 {
+		t.Errorf("expected 1 widget, got %v", body["widgets"])
+	}
+}
+
+func TestDashboardsCreateMissingRequiredFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantErr string
+	}{
+		{
+			name:    "missing title",
+			args:    []string{"dashboards", "create", "--layout-type", "ordered"},
+			wantErr: "--title is required",
+		},
+		{
+			name:    "missing layout-type",
+			args:    []string{"dashboards", "create", "--title", "Test"},
+			wantErr: "--layout-type is required",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildDashboardsCreateCmd(newTestDashboardsAPI(srv))
+			root.SetArgs(tc.args)
+			err := root.Execute()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q missing %q", err.Error(), tc.wantErr)
+			}
+		})
+	}
+}

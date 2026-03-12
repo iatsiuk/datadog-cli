@@ -60,11 +60,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 4: Dashboard create with tests
-- [ ] write tests for `dashboards create` -- capture request body with title, layout_type, widgets (from JSON file/string)
-- [ ] write tests for `dashboards create` -- required flags validation (title, layout_type)
-- [ ] write tests for `dashboards create` -- optional flags (description, tags, template_variables)
-- [ ] implement `newDashboardsCreateCmd` -- flags for title, layout_type, description, widgets (JSON), tags
-- [ ] run `make build` -- must pass
+- [x] write tests for `dashboards create` -- capture request body with title, layout_type, widgets (from JSON file/string)
+- [x] write tests for `dashboards create` -- required flags validation (title, layout_type)
+- [x] write tests for `dashboards create` -- optional flags (description, tags, template_variables)
+- [x] implement `newDashboardsCreateCmd` -- flags for title, layout_type, description, widgets (JSON), tags
+- [x] run `make build` -- must pass
 
 ### Task 5: Dashboard update with tests
 - [ ] write tests for `dashboards update --id <id>` -- capture request body
