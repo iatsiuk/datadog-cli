@@ -25,6 +25,7 @@ func defaultEventsAPI() (*eventsAPI, error) {
 		return nil, err
 	}
 	c, ctx := client.New(cfg)
+	c.GetConfig().SetUnstableOperationEnabled("v2.EventsApi.CreateEvent", true)
 	return &eventsAPI{api: datadogV2.NewEventsApi(c), ctx: ctx}, nil
 }
 
@@ -37,6 +38,87 @@ func NewEventsCommand() *cobra.Command {
 	cmd.AddCommand(newEventsListCmd(defaultEventsAPI))
 	cmd.AddCommand(newEventsSearchCmd(defaultEventsAPI))
 	cmd.AddCommand(newEventsShowCmd(defaultEventsAPI))
+	cmd.AddCommand(newEventsCreateCmd(defaultEventsAPI))
+	return cmd
+}
+
+var validAlertTypes = map[string]datadogV2.AlertEventCustomAttributesStatus{
+	"info":    datadogV2.ALERTEVENTCUSTOMATTRIBUTESSTATUS_OK,
+	"success": datadogV2.ALERTEVENTCUSTOMATTRIBUTESSTATUS_OK,
+	"warning": datadogV2.ALERTEVENTCUSTOMATTRIBUTESSTATUS_WARN,
+	"error":   datadogV2.ALERTEVENTCUSTOMATTRIBUTESSTATUS_ERROR,
+}
+
+func newEventsCreateCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
+	var (
+		title     string
+		text      string
+		tagsStr   string
+		alertType string
+		source    string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create an event",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if title == "" {
+				return fmt.Errorf("--title is required")
+			}
+
+			status, ok := validAlertTypes[alertType]
+			if !ok {
+				return fmt.Errorf("--alert-type must be one of: info, warning, error, success")
+			}
+
+			eapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			alertAttrs := datadogV2.NewAlertEventCustomAttributes(status)
+			attrs := datadogV2.AlertEventCustomAttributesAsEventPayloadAttributes(alertAttrs)
+
+			payload := datadogV2.NewEventPayload(attrs, datadogV2.EVENTCATEGORY_ALERT, title)
+			if text != "" {
+				payload.SetMessage(text)
+			}
+			if tagsStr != "" {
+				payload.SetTags(strings.Split(tagsStr, ","))
+			}
+			if source != "" {
+				_ = source // no direct source field in v2 create API
+			}
+
+			req := datadogV2.NewEventCreateRequest(*payload, datadogV2.EVENTCREATEREQUESTTYPE_EVENT)
+			body := datadogV2.NewEventCreateRequestPayload(*req)
+
+			resp, httpResp, err := eapi.api.CreateEvent(eapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create event: %w", err)
+			}
+
+			data := resp.GetData()
+			respAttrs := data.GetAttributes()
+			innerAttrs := respAttrs.GetAttributes()
+			evt := innerAttrs.GetEvt()
+			eventID := evt.GetId()
+			if uid := evt.GetUid(); uid != "" {
+				eventID = uid
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Created event: %s\n", eventID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&title, "title", "", "event title (required)")
+	cmd.Flags().StringVar(&text, "text", "", "event text/body")
+	cmd.Flags().StringVar(&tagsStr, "tags", "", "comma-separated tags, e.g. env:prod,service:web")
+	cmd.Flags().StringVar(&alertType, "alert-type", "info", "alert type: info, warning, error, success")
+	cmd.Flags().StringVar(&source, "source", "", "event source")
 	return cmd
 }
 

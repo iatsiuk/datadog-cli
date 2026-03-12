@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,6 +38,7 @@ func newTestEventsAPI(srv *httptest.Server) func() (*eventsAPI, error) {
 	return func() (*eventsAPI, error) {
 		cfg := datadog.NewConfiguration()
 		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.OperationServers["v2.EventsApi.CreateEvent"] = datadog.ServerConfigurations{{URL: srv.URL}}
 		cfg.Debug = false
 		c := datadog.NewAPIClient(cfg)
 		apiCtx := context.WithValue(
@@ -430,6 +432,133 @@ func TestEventsShowIDRequired(t *testing.T) {
 	root.SetArgs([]string{"events", "show"})
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected error when event ID is missing")
+	}
+}
+
+func buildEventsCreateCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	events := &cobra.Command{Use: "events"}
+	events.AddCommand(newEventsCreateCmd(mkAPI))
+	root.AddCommand(events)
+	return root, buf
+}
+
+const mockEventCreateResponse = `{
+	"data": {
+		"attributes": {
+			"attributes": {
+				"evt": {
+					"id": "created-event-123"
+				}
+			}
+		},
+		"type": "event"
+	}
+}`
+
+func TestEventsCreateFlags(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedReq  *http.Request
+		capturedBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		capturedBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildEventsCreateCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{
+		"events", "create",
+		"--title", "Deploy v2.1",
+		"--text", "Released to prod",
+		"--tags", "env:prod,service:web",
+		"--alert-type", "info",
+		"--source", "github",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	body := capturedBody
+	mu.Unlock()
+
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if req.Method != http.MethodPost {
+		t.Errorf("method = %q, want POST", req.Method)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("invalid request body JSON: %v", err)
+	}
+	data := payload["data"].(map[string]interface{})
+	attrs := data["attributes"].(map[string]interface{})
+	if attrs["title"] != "Deploy v2.1" {
+		t.Errorf("title = %v, want Deploy v2.1", attrs["title"])
+	}
+	if attrs["message"] != "Released to prod" {
+		t.Errorf("message = %v, want Released to prod", attrs["message"])
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "created-event-123") {
+		t.Errorf("output missing event id:\n%s", out)
+	}
+}
+
+func TestEventsCreateTitleRequired(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "create"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --title is missing")
+	}
+}
+
+func TestEventsCreateAlertTypeValidation(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockEventCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	for _, validType := range []string{"info", "warning", "error", "success"} {
+		root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
+		root.SetArgs([]string{"events", "create", "--title", "test", "--alert-type", validType})
+		if err := root.Execute(); err != nil {
+			t.Errorf("alert-type %q should be valid, got error: %v", validType, err)
+		}
+	}
+
+	root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
+	root.SetArgs([]string{"events", "create", "--title", "test", "--alert-type", "invalid"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for invalid --alert-type value")
 	}
 }
 
