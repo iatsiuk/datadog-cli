@@ -54,6 +54,10 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 		Use:   "tail",
 		Short: "Tail events in real time",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if interval <= 0 {
+				return fmt.Errorf("--interval must be positive")
+			}
+
 			eapi, err := mkAPI()
 			if err != nil {
 				return err
@@ -65,13 +69,17 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 			// in the small overlap window between consecutive polls.
 			prevIDs := make(map[string]bool)
 
+			const tailPageLimit = int32(1000)
+
 			for {
+				to := time.Now()
 				fromStr := from.UTC().Format(time.RFC3339)
-				toStr := time.Now().UTC().Format(time.RFC3339)
+				toStr := to.UTC().Format(time.RFC3339)
 
 				opts := datadogV2.NewListEventsOptionalParameters().
 					WithFilterFrom(fromStr).
-					WithFilterTo(toStr)
+					WithFilterTo(toStr).
+					WithPageLimit(tailPageLimit)
 				if query != "" {
 					opts = opts.WithFilterQuery(query)
 				}
@@ -117,7 +125,8 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 				case <-time.After(interval):
 				}
 
-				from = time.Now().Add(-interval)
+				// advance from to previous to boundary to avoid gaps
+				from = to
 			}
 		},
 	}

@@ -654,6 +654,24 @@ func buildEventsTailCmd(mkAPI func() (*eventsAPI, error)) (*cobra.Command, *byte
 	return root, buf
 }
 
+func TestEventsTailIntervalValidation(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	for _, interval := range []string{"0s", "-1s"} {
+		root, _ := buildEventsTailCmd(newTestEventsAPI(srv))
+		root.SetArgs([]string{"events", "tail", "--interval", interval})
+		if err := root.Execute(); err == nil {
+			t.Errorf("expected error for --interval %s", interval)
+		}
+	}
+}
+
 func TestEventsTailFlagQuery(t *testing.T) {
 	t.Parallel()
 
