@@ -552,7 +552,7 @@ func TestEventsCreateAlertTypeValidation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	for _, validType := range []string{"info", "warning", "error", "success"} {
+	for _, validType := range []string{"info", "warning", "error"} {
 		root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
 		root.SetArgs([]string{"events", "create", "--title", "test", "--alert-type", validType})
 		if err := root.Execute(); err != nil {
@@ -560,10 +560,12 @@ func TestEventsCreateAlertTypeValidation(t *testing.T) {
 		}
 	}
 
-	root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
-	root.SetArgs([]string{"events", "create", "--title", "test", "--alert-type", "invalid"})
-	if err := root.Execute(); err == nil {
-		t.Error("expected error for invalid --alert-type value")
+	for _, invalidType := range []string{"invalid", "success"} {
+		root, _ := buildEventsCreateCmd(newTestEventsAPI(srv))
+		root.SetArgs([]string{"events", "create", "--title", "test", "--alert-type", invalidType})
+		if err := root.Execute(); err == nil {
+			t.Errorf("expected error for invalid --alert-type %q", invalidType)
+		}
 	}
 }
 

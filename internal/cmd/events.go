@@ -138,7 +138,6 @@ func newEventsTailCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 
 var validAlertTypes = map[string]datadogV2.AlertEventCustomAttributesStatus{
 	"info":    datadogV2.ALERTEVENTCUSTOMATTRIBUTESSTATUS_OK,
-	"success": datadogV2.ALERTEVENTCUSTOMATTRIBUTESSTATUS_OK,
 	"warning": datadogV2.ALERTEVENTCUSTOMATTRIBUTESSTATUS_WARN,
 	"error":   datadogV2.ALERTEVENTCUSTOMATTRIBUTESSTATUS_ERROR,
 }
@@ -161,7 +160,7 @@ func newEventsCreateCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 
 			status, ok := validAlertTypes[alertType]
 			if !ok {
-				return fmt.Errorf("--alert-type must be one of: info, warning, error, success")
+				return fmt.Errorf("--alert-type must be one of: info, warning, error")
 			}
 
 			eapi, err := mkAPI()
@@ -212,7 +211,7 @@ func newEventsCreateCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "event title (required)")
 	cmd.Flags().StringVar(&text, "text", "", "event text/body")
 	cmd.Flags().StringVar(&tagsStr, "tags", "", "comma-separated tags, e.g. env:prod,service:web")
-	cmd.Flags().StringVar(&alertType, "alert-type", "info", "alert type: info, warning, error, success")
+	cmd.Flags().StringVar(&alertType, "alert-type", "info", "alert type: info, warning, error")
 	return cmd
 }
 
