@@ -1043,3 +1043,340 @@ func TestRUMRetentionFilterDeleteWithYes(t *testing.T) {
 		t.Error("expected DELETE request to be made")
 	}
 }
+
+// --- playlist tests ---
+
+const mockPlaylistListResponse = `{
+	"data": [
+		{
+			"id": "42",
+			"type": "rum_replay_playlist",
+			"attributes": {
+				"name": "My Playlist",
+				"description": "test desc",
+				"session_count": 3,
+				"created_at": "2024-01-15T10:00:00Z"
+			}
+		}
+	]
+}`
+
+const mockPlaylistResponse = `{
+	"data": {
+		"id": "42",
+		"type": "rum_replay_playlist",
+		"attributes": {
+			"name": "My Playlist",
+			"description": "test desc",
+			"session_count": 3,
+			"created_at": "2024-01-15T10:00:00Z"
+		}
+	}
+}`
+
+const mockPlaylistSessionsResponse = `{
+	"data": [
+		{
+			"id": "sess-abc",
+			"type": "rum_replay_session"
+		}
+	]
+}`
+
+func newTestRUMPlaylistsAPI(srv *httptest.Server) func() (*rumPlaylistsAPI, error) {
+	return func() (*rumPlaylistsAPI, error) {
+		cfg := datadog.NewConfiguration()
+		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
+		cfg.Debug = false
+		c := datadog.NewAPIClient(cfg)
+		apiCtx := context.WithValue(
+			context.Background(),
+			datadog.ContextAPIKeys,
+			map[string]datadog.APIKey{
+				"apiKeyAuth": {Key: "test"},
+				"appKeyAuth": {Key: "test"},
+			},
+		)
+		return &rumPlaylistsAPI{api: datadogV2.NewRumReplayPlaylistsApi(c), ctx: apiCtx}, nil
+	}
+}
+
+func buildRUMPlaylistCmd(mkAPI func() (*rumPlaylistsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "dd"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	rum := &cobra.Command{Use: "rum"}
+	rum.AddCommand(newRUMPlaylistCmd(mkAPI))
+	root.AddCommand(rum)
+	return root, buf
+}
+
+func TestRUMPlaylistListTable(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPlaylistListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "NAME", "SESSIONS", "CREATED", "My Playlist", "42"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMPlaylistListJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPlaylistListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "list", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Errorf("got %d entries, want 1", len(result))
+	}
+}
+
+func TestRUMPlaylistShow(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPlaylistResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "show", "42"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"42", "My Playlist", "test desc"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRUMPlaylistShowInvalidID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "show", "not-an-int"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for non-integer playlist id")
+	}
+}
+
+func TestRUMPlaylistCreate(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPlaylistResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "create", "--name", "My Playlist"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(string(capturedBody), "My Playlist") {
+		t.Errorf("request body missing name: %s", capturedBody)
+	}
+	if !strings.Contains(buf.String(), "My Playlist") {
+		t.Errorf("output missing name:\n%s", buf.String())
+	}
+}
+
+func TestRUMPlaylistCreateRequiresName(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "create"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --name flag")
+	}
+}
+
+func TestRUMPlaylistUpdate(t *testing.T) {
+	t.Parallel()
+
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPlaylistResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "update", "42", "--name", "Updated"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// should make GET then PUT (2 calls)
+	if callCount < 2 {
+		t.Errorf("expected at least 2 API calls, got %d", callCount)
+	}
+	_ = buf.String()
+}
+
+func TestRUMPlaylistDelete(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "delete", "42", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !called {
+		t.Error("expected DELETE request to be made")
+	}
+}
+
+func TestRUMPlaylistDeleteRequiresYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "delete", "42"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error without --yes flag")
+	}
+}
+
+func TestRUMPlaylistSessions(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPlaylistSessionsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "sessions", "42"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "sess-abc") {
+		t.Errorf("output missing session id:\n%s", out)
+	}
+}
+
+func TestRUMPlaylistAddSession(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"id":"sess-abc","type":"rum_replay_session"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "add-session", "42", "sess-abc"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+
+	if req == nil {
+		t.Fatal("no request made")
+	}
+	if !strings.Contains(req.URL.Path, "42") {
+		t.Errorf("path missing playlist id: %s", req.URL.Path)
+	}
+	if !strings.Contains(req.URL.Path, "sess-abc") {
+		t.Errorf("path missing session id: %s", req.URL.Path)
+	}
+	if !strings.Contains(buf.String(), "added") {
+		t.Errorf("output missing 'added':\n%s", buf.String())
+	}
+}
+
+func TestRUMPlaylistRemoveSession(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildRUMPlaylistCmd(newTestRUMPlaylistsAPI(srv))
+	root.SetArgs([]string{"rum", "playlist", "remove-session", "42", "sess-abc"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !called {
+		t.Error("expected DELETE request to be made")
+	}
+	if !strings.Contains(buf.String(), "removed") {
+		t.Errorf("output missing 'removed':\n%s", buf.String())
+	}
+}
