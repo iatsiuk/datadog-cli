@@ -28,6 +28,12 @@ CLI tool for querying Datadog from the terminal.
 - `datadogV2.APMRetentionFiltersApi`: ListApmRetentionFilters, GetApmRetentionFilter, CreateApmRetentionFilter, UpdateApmRetentionFilter, DeleteApmRetentionFilter
 - `datadogV2.SpansMetricsApi`: ListSpansMetrics, GetSpansMetric, CreateSpansMetric, UpdateSpansMetric, DeleteSpansMetric
 
+### Events
+
+- `datadogV2.EventsApi`: ListEvents, SearchEvents, GetEvent, CreateEvent
+- Note: CreateEvent requires unstable operation flag: `c.GetConfig().SetUnstableOperationEnabled("v2.EventsApi.CreateEvent", true)`
+- `AlertEventCustomAttributesStatus` has three values: OK, WARN, ERROR (no SUCCESS constant)
+
 ## Code Style
 
 ### Imports

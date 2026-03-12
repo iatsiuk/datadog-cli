@@ -225,13 +225,13 @@ Search, view, create, and tail Datadog events.
 dd events list [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--sort <field>]
 dd events search --query <query> [--from <time>] [--to <time>] [--limit <n>]
 dd events show <event-id> [--json]
-dd events create --title <title> [--text <text>] [--tags <tag,...>] [--alert-type <type>] [--source <source>]
-dd events tail [--query <query>]
+dd events create --title <title> [--text <text>] [--tags <tag,...>] [--alert-type <type>]
+dd events tail [--query <query>] [--interval <duration>]
 ```
 
 List/search output columns: `TIMESTAMP | TITLE | SOURCE | TAGS`
 
-Show output fields: ID, Title, Text, Date, Source, Tags, Alert Type, URL
+Show output fields: ID, Date, Tags, Message
 
 `--alert-type` accepts: `info`, `warning`, `error`, `success` (default: `info`)
 

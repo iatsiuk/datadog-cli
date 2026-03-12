@@ -486,7 +486,6 @@ func TestEventsCreateFlags(t *testing.T) {
 		"--text", "Released to prod",
 		"--tags", "env:prod,service:web",
 		"--alert-type", "info",
-		"--source", "github",
 	})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)

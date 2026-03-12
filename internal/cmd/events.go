@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -132,7 +133,6 @@ func newEventsCreateCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 		text      string
 		tagsStr   string
 		alertType string
-		source    string
 	)
 
 	cmd := &cobra.Command{
@@ -163,9 +163,6 @@ func newEventsCreateCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 			if tagsStr != "" {
 				payload.SetTags(strings.Split(tagsStr, ","))
 			}
-			if source != "" {
-				_ = source // no direct source field in v2 create API
-			}
 
 			req := datadogV2.NewEventCreateRequest(*payload, datadogV2.EVENTCREATEREQUESTTYPE_EVENT)
 			body := datadogV2.NewEventCreateRequestPayload(*req)
@@ -195,7 +192,6 @@ func newEventsCreateCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&text, "text", "", "event text/body")
 	cmd.Flags().StringVar(&tagsStr, "tags", "", "comma-separated tags, e.g. env:prod,service:web")
 	cmd.Flags().StringVar(&alertType, "alert-type", "info", "alert type: info, warning, error, success")
-	cmd.Flags().StringVar(&source, "source", "", "event source")
 	return cmd
 }
 
@@ -245,6 +241,24 @@ func newEventsShowCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+func printEventsTable(w io.Writer, data []datadogV2.EventResponse) error {
+	headers := []string{"TIMESTAMP", "TITLE", "SOURCE", "TAGS"}
+	var rows [][]string
+	for _, event := range data {
+		attrs := event.GetAttributes()
+		ts := ""
+		if t := attrs.Timestamp; t != nil {
+			ts = t.UTC().Format(time.RFC3339)
+		}
+		inner := attrs.GetAttributes()
+		title := inner.GetTitle()
+		source := inner.GetSourceTypeName()
+		tags := strings.Join(attrs.GetTags(), ", ")
+		rows = append(rows, []string{ts, title, source, tags})
+	}
+	return output.PrintTable(w, headers, rows)
 }
 
 func newEventsSearchCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
@@ -320,21 +334,7 @@ func newEventsSearchCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			headers := []string{"TIMESTAMP", "TITLE", "SOURCE", "TAGS"}
-			var rows [][]string
-			for _, event := range data {
-				attrs := event.GetAttributes()
-				ts := ""
-				if t := attrs.Timestamp; t != nil {
-					ts = t.UTC().Format(time.RFC3339)
-				}
-				inner := attrs.GetAttributes()
-				title := inner.GetTitle()
-				source := inner.GetSourceTypeName()
-				tags := strings.Join(attrs.GetTags(), ", ")
-				rows = append(rows, []string{ts, title, source, tags})
-			}
-			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+			return printEventsTable(cmd.OutOrStdout(), data)
 		},
 	}
 
@@ -414,21 +414,7 @@ func newEventsListCmd(mkAPI func() (*eventsAPI, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			headers := []string{"TIMESTAMP", "TITLE", "SOURCE", "TAGS"}
-			var rows [][]string
-			for _, event := range data {
-				attrs := event.GetAttributes()
-				ts := ""
-				if t := attrs.Timestamp; t != nil {
-					ts = t.UTC().Format(time.RFC3339)
-				}
-				inner := attrs.GetAttributes()
-				title := inner.GetTitle()
-				source := inner.GetSourceTypeName()
-				tags := strings.Join(attrs.GetTags(), ", ")
-				rows = append(rows, []string{ts, title, source, tags})
-			}
-			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+			return printEventsTable(cmd.OutOrStdout(), data)
 		},
 	}
 
