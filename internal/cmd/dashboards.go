@@ -448,6 +448,7 @@ func newDashboardsCreateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 			body := datadogV1.Dashboard{
 				Title:      title,
 				LayoutType: datadogV1.DashboardLayoutType(layoutType),
+				Widgets:    []datadogV1.Widget{},
 			}
 
 			if description != "" {
@@ -551,6 +552,9 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 				if !body.LayoutType.IsValid() {
 					return fmt.Errorf("--body must include a valid layout_type (ordered or free)")
 				}
+				if body.Widgets == nil {
+					body.Widgets = []datadogV1.Widget{}
+				}
 			} else {
 				if title == "" {
 					return fmt.Errorf("--title is required (or use --body for full JSON)")
@@ -563,6 +567,7 @@ func newDashboardsUpdateCmd(mkAPI func() (*dashboardsAPI, error)) *cobra.Command
 				}
 				body.Title = title
 				body.LayoutType = datadogV1.DashboardLayoutType(layoutType)
+				body.Widgets = []datadogV1.Widget{}
 
 				if description != "" {
 					body.Description = *datadog.NewNullableString(&description)
