@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/spf13/cobra"
@@ -10,6 +13,11 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/client"
 	"github.com/iatsiuk/datadog-cli/internal/config"
 	"github.com/iatsiuk/datadog-cli/internal/output"
+)
+
+var (
+	errDowntimeIDRequired    = errors.New("--id is required")
+	errDowntimeScopeRequired = errors.New("--scope is required")
 )
 
 type downtimesAPI struct {
@@ -32,6 +40,8 @@ func newDowntimeCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
 		Short: "Manage Datadog downtimes",
 	}
 	cmd.AddCommand(newDowntimeListCmd(mkAPI))
+	cmd.AddCommand(newDowntimeShowCmd(mkAPI))
+	cmd.AddCommand(newDowntimeCreateCmd(mkAPI))
 	return cmd
 }
 
@@ -108,5 +118,181 @@ func newDowntimeListCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&currentOnly, "current-only", false, "only return active downtimes")
+	return cmd
+}
+
+func newDowntimeShowCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
+	var downtimeID string
+
+	cmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show details of a downtime",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if downtimeID == "" {
+				return errDowntimeIDRequired
+			}
+
+			dapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := dapi.api.GetDowntime(dapi.ctx, downtimeID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get downtime: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			d := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), d)
+			}
+
+			return printDowntimeTable(cmd, d)
+		},
+	}
+
+	cmd.Flags().StringVar(&downtimeID, "id", "", "downtime ID")
+	return cmd
+}
+
+func printDowntimeTable(cmd *cobra.Command, d datadogV2.DowntimeResponseData) error {
+	attrs := d.GetAttributes()
+	rows := [][]string{
+		{"ID", d.GetId()},
+		{"SCOPE", attrs.GetScope()},
+		{"STATUS", string(attrs.GetStatus())},
+	}
+
+	if mi := attrs.MonitorIdentifier; mi != nil {
+		if mi.DowntimeMonitorIdentifierId != nil {
+			rows = append(rows, []string{"MONITOR_ID", fmt.Sprintf("%d", mi.DowntimeMonitorIdentifierId.MonitorId)})
+		} else if mi.DowntimeMonitorIdentifierTags != nil {
+			rows = append(rows, []string{"MONITOR_TAGS", strings.Join(mi.DowntimeMonitorIdentifierTags.MonitorTags, ", ")})
+		}
+	}
+
+	if msg := attrs.GetMessage(); msg != "" {
+		rows = append(rows, []string{"MESSAGE", msg})
+	}
+
+	if sched := attrs.Schedule; sched != nil {
+		if sched.DowntimeScheduleOneTimeResponse != nil {
+			t := sched.DowntimeScheduleOneTimeResponse.Start
+			if !t.IsZero() {
+				rows = append(rows, []string{"START", t.Format("2006-01-02 15:04:05")})
+			}
+			if e := sched.DowntimeScheduleOneTimeResponse.End.Get(); e != nil {
+				rows = append(rows, []string{"END", e.Format("2006-01-02 15:04:05")})
+			}
+		}
+	}
+
+	if t := attrs.GetCreated(); !t.IsZero() {
+		rows = append(rows, []string{"CREATED", t.Format("2006-01-02 15:04:05")})
+	}
+
+	return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+}
+
+func newDowntimeCreateCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
+	var (
+		scope       string
+		monitorID   int64
+		monitorTags []string
+		message     string
+		startStr    string
+		endStr      string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a downtime",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if scope == "" {
+				return errDowntimeScopeRequired
+			}
+
+			var monIdentifier datadogV2.DowntimeMonitorIdentifier
+			if monitorID != 0 {
+				mid := datadogV2.NewDowntimeMonitorIdentifierId(monitorID)
+				monIdentifier = datadogV2.DowntimeMonitorIdentifierIdAsDowntimeMonitorIdentifier(mid)
+			} else {
+				tags := monitorTags
+				if len(tags) == 0 {
+					tags = []string{"*"}
+				}
+				mtags := datadogV2.NewDowntimeMonitorIdentifierTags(tags)
+				monIdentifier = datadogV2.DowntimeMonitorIdentifierTagsAsDowntimeMonitorIdentifier(mtags)
+			}
+
+			attrs := datadogV2.NewDowntimeCreateRequestAttributes(monIdentifier, scope)
+			if message != "" {
+				attrs.SetMessage(message)
+			}
+
+			if startStr != "" || endStr != "" {
+				sched := &datadogV2.DowntimeScheduleOneTimeCreateUpdateRequest{}
+				if startStr != "" {
+					t, err := time.Parse(time.RFC3339, startStr)
+					if err != nil {
+						return fmt.Errorf("parse --start: %w", err)
+					}
+					sched.Start.Set(&t)
+				}
+				if endStr != "" {
+					t, err := time.Parse(time.RFC3339, endStr)
+					if err != nil {
+						return fmt.Errorf("parse --end: %w", err)
+					}
+					sched.End.Set(&t)
+				}
+				schedReq := datadogV2.DowntimeScheduleOneTimeCreateUpdateRequestAsDowntimeScheduleCreateRequest(sched)
+				attrs.Schedule = &schedReq
+			}
+
+			data := datadogV2.NewDowntimeCreateRequestData(*attrs, datadogV2.DOWNTIMERESOURCETYPE_DOWNTIME)
+			body := datadogV2.NewDowntimeCreateRequest(*data)
+
+			dapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := dapi.api.CreateDowntime(dapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create downtime: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			d := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), d)
+			}
+
+			return printDowntimeTable(cmd, d)
+		},
+	}
+
+	cmd.Flags().StringVar(&scope, "scope", "", "scope for the downtime (required)")
+	cmd.Flags().Int64Var(&monitorID, "monitor-id", 0, "mute specific monitor by ID")
+	cmd.Flags().StringArrayVar(&monitorTags, "monitor-tags", nil, "mute monitors matching tags (default: all)")
+	cmd.Flags().StringVar(&message, "message", "", "notification message")
+	cmd.Flags().StringVar(&startStr, "start", "", "start time (RFC3339, e.g. 2026-03-13T10:00:00Z)")
+	cmd.Flags().StringVar(&endStr, "end", "", "end time (RFC3339)")
 	return cmd
 }
