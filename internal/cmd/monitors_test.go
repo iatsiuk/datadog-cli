@@ -607,6 +607,152 @@ func TestMonitorsDelete_MissingYes(t *testing.T) {
 	}
 }
 
+func buildMonitorsMuteCmd(mkAPI func() (*monitorsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	monitors := &cobra.Command{Use: "monitors"}
+	monitors.AddCommand(newMonitorsMuteCmd(mkAPI))
+	monitors.AddCommand(newMonitorsUnmuteCmd(mkAPI))
+	root.AddCommand(monitors)
+	return root, buf
+}
+
+const mockMonitorMuteResponse = `{
+	"id": 12345,
+	"name": "CPU High",
+	"type": "metric alert",
+	"overall_state": "Alert",
+	"query": "avg(last_5m):avg:system.cpu.user{*} > 90",
+	"message": "CPU is too high",
+	"tags": ["env:prod"],
+	"options": {"silenced": {"*": 0}}
+}`
+
+func TestMonitorsMute_Success(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockMonitorShowResponse) //nolint:errcheck
+			return
+		}
+		if r.Method == http.MethodPut {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		fmt.Fprint(w, mockMonitorMuteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMonitorsMuteCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "mute", "--id", "12345"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "12345") {
+		t.Errorf("output missing monitor ID\nfull output:\n%s", out)
+	}
+
+	body := string(capturedBody)
+	if !strings.Contains(body, "silenced") {
+		t.Errorf("request body missing silenced field\nbody: %s", body)
+	}
+}
+
+func TestMonitorsMute_WithEnd(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockMonitorShowResponse) //nolint:errcheck
+			return
+		}
+		if r.Method == http.MethodPut {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		fmt.Fprint(w, mockMonitorMuteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildMonitorsMuteCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "mute", "--id", "12345", "--end", "9999999999"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	body := string(capturedBody)
+	if !strings.Contains(body, "silenced") {
+		t.Errorf("request body missing silenced field\nbody: %s", body)
+	}
+	if !strings.Contains(body, "9999999999") {
+		t.Errorf("request body missing end timestamp\nbody: %s", body)
+	}
+}
+
+func TestMonitorsMute_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildMonitorsMuteCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "mute"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --id is missing")
+	}
+}
+
+func TestMonitorsUnmute_Success(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockMonitorMuteResponse) //nolint:errcheck
+			return
+		}
+		if r.Method == http.MethodPut {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		fmt.Fprint(w, mockMonitorShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMonitorsMuteCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "unmute", "--id", "12345"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "12345") {
+		t.Errorf("output missing monitor ID\nfull output:\n%s", out)
+	}
+
+	// silenced should be empty map after unmute
+	body := string(capturedBody)
+	if !strings.Contains(body, "silenced") {
+		t.Errorf("request body missing silenced field\nbody: %s", body)
+	}
+}
+
+func TestMonitorsUnmute_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildMonitorsMuteCmd(newTestMonitorsAPI(srv))
+	root.SetArgs([]string{"monitors", "unmute"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --id is missing")
+	}
+}
+
 func TestMonitorsSearch_Pagination(t *testing.T) {
 	t.Parallel()
 	var capturedPage, capturedPerPage string

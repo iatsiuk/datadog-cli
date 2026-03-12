@@ -41,6 +41,8 @@ func NewMonitorsCommand() *cobra.Command {
 	cmd.AddCommand(newMonitorsCreateCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsUpdateCmd(defaultMonitorsAPI))
 	cmd.AddCommand(newMonitorsDeleteCmd(defaultMonitorsAPI))
+	cmd.AddCommand(newMonitorsMuteCmd(defaultMonitorsAPI))
+	cmd.AddCommand(newMonitorsUnmuteCmd(defaultMonitorsAPI))
 	return cmd
 }
 
@@ -491,5 +493,131 @@ func newMonitorsDeleteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 
 	cmd.Flags().Int64Var(&monitorID, "id", 0, "monitor ID (required)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
+}
+
+func newMonitorsMuteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
+	var (
+		monitorID int64
+		scope     string
+		end       int64
+	)
+
+	cmd := &cobra.Command{
+		Use:   "mute",
+		Short: "Mute a monitor",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if monitorID == 0 {
+				return errMonitorIDRequired
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			existing, httpResp, err := mapi.api.GetMonitor(mapi.ctx, monitorID, *datadogV1.NewGetMonitorOptionalParameters())
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get monitor: %w", err)
+			}
+
+			opts := existing.GetOptions()
+			silenced := opts.GetSilenced()
+			if silenced == nil {
+				silenced = make(map[string]int64)
+			}
+			silenced[scope] = end
+			opts.SetSilenced(silenced)
+			existing.SetOptions(opts)
+
+			body := datadogV1.NewMonitorUpdateRequest()
+			body.SetName(existing.GetName())
+			body.SetQuery(existing.GetQuery())
+			body.SetMessage(existing.GetMessage())
+			body.SetTags(existing.GetTags())
+			body.SetOptions(opts)
+
+			_, httpResp, err = mapi.api.UpdateMonitor(mapi.ctx, monitorID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("mute monitor: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "muted monitor %d (scope: %s)\n", monitorID, scope) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().Int64Var(&monitorID, "id", 0, "monitor ID (required)")
+	cmd.Flags().StringVar(&scope, "scope", "*", "scope to mute (default: all groups)")
+	cmd.Flags().Int64Var(&end, "end", 0, "mute end time as Unix timestamp (0 = indefinite)")
+	return cmd
+}
+
+func newMonitorsUnmuteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
+	var (
+		monitorID int64
+		scope     string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "unmute",
+		Short: "Unmute a monitor",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if monitorID == 0 {
+				return errMonitorIDRequired
+			}
+
+			mapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			existing, httpResp, err := mapi.api.GetMonitor(mapi.ctx, monitorID, *datadogV1.NewGetMonitorOptionalParameters())
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get monitor: %w", err)
+			}
+
+			opts := existing.GetOptions()
+			if scope == "" {
+				// clear all silenced scopes
+				opts.SetSilenced(map[string]int64{})
+			} else {
+				silenced := opts.GetSilenced()
+				delete(silenced, scope)
+				opts.SetSilenced(silenced)
+			}
+			existing.SetOptions(opts)
+
+			body := datadogV1.NewMonitorUpdateRequest()
+			body.SetName(existing.GetName())
+			body.SetQuery(existing.GetQuery())
+			body.SetMessage(existing.GetMessage())
+			body.SetTags(existing.GetTags())
+			body.SetOptions(opts)
+
+			_, httpResp, err = mapi.api.UpdateMonitor(mapi.ctx, monitorID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("unmute monitor: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "unmuted monitor %d\n", monitorID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().Int64Var(&monitorID, "id", 0, "monitor ID (required)")
+	cmd.Flags().StringVar(&scope, "scope", "", "scope to unmute (empty = unmute all)")
 	return cmd
 }
