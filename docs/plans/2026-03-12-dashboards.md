@@ -102,11 +102,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 10: Verify acceptance criteria
-- [ ] verify all dashboard operations: list, show, create, update, delete
-- [ ] verify all dashboard list operations: list, show, create, update, delete, add-items, remove-items
-- [ ] verify edge cases: empty results, missing flags, `--yes` confirmation
-- [ ] run full test suite: `go test -race ./...`
-- [ ] run linter: `make build`
+- [x] verify all dashboard operations: list, show, create, update, delete
+- [x] verify all dashboard list operations: list, show, create, update, delete, add-items, remove-items
+- [x] verify edge cases: empty results, missing flags, `--yes` confirmation
+- [x] run full test suite: `go test -race ./...`
+- [x] run linter: `make build`
 
 ### Task 11: [Final] Update documentation
 - [ ] update CLAUDE.md API reference section with Dashboards/Dashboard Lists APIs
