@@ -37,13 +37,13 @@
 ## Implementation Steps
 
 ### Task 1: Hosts API wrapper and command skeleton with tests
-- [ ] write tests for `newTestHostsAPI` helper (mock server creation)
-- [ ] write tests for `NewHostsCommand()` returning correct subcommands
-- [ ] implement `hostsAPI` struct wrapping `datadogV1.HostsApi` in `internal/cmd/hosts.go`
-- [ ] implement `defaultHostsAPI()` with config loading and client creation
-- [ ] implement `NewHostsCommand()` with subcommand registration
-- [ ] register `NewHostsCommand()` in `root.go`
-- [ ] run `make build` -- must pass
+- [x] write tests for `newTestHostsAPI` helper (mock server creation)
+- [x] write tests for `NewHostsCommand()` returning correct subcommands
+- [x] implement `hostsAPI` struct wrapping `datadogV1.HostsApi` in `internal/cmd/hosts.go`
+- [x] implement `defaultHostsAPI()` with config loading and client creation
+- [x] implement `NewHostsCommand()` with subcommand registration
+- [x] register `NewHostsCommand()` in `root.go`
+- [x] run `make build` -- must pass
 
 ### Task 2: Host list with tests
 - [ ] write tests for `hosts list` -- table output (name, id, aliases, apps, sources, up, last_reported_time)
