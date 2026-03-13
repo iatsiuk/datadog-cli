@@ -616,6 +616,175 @@ func TestSLOsCreate_JSONOutput(t *testing.T) {
 	}
 }
 
+func buildSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	slos := &cobra.Command{Use: "slos"}
+	slos.AddCommand(newSLOsUpdateCmd(mkAPI))
+	root.AddCommand(slos)
+	return root, buf
+}
+
+const mockSLOGetForUpdate = `{
+	"data": {
+		"id": "abc123",
+		"name": "API Availability",
+		"type": "metric",
+		"description": "Old description",
+		"thresholds": [{"timeframe": "30d", "target": 99.9}],
+		"tags": ["env:prod"],
+		"query": {"numerator": "sum:requests.success{*}.as_count()", "denominator": "sum:requests.total{*}.as_count()"}
+	}
+}`
+
+const mockSLOUpdateResponse = `{
+	"data": [
+		{
+			"id": "abc123",
+			"name": "API Availability Updated",
+			"type": "metric",
+			"description": "New description",
+			"thresholds": [{"timeframe": "30d", "target": 99.95}],
+			"tags": ["env:prod", "team:platform"]
+		}
+	]
+}`
+
+func TestSLOsUpdate_RequestBody(t *testing.T) {
+	t.Parallel()
+	var requestBodies []map[string]interface{}
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockSLOGetForUpdate) //nolint:errcheck
+		} else {
+			callCount++
+			body, _ := io.ReadAll(r.Body)
+			var rb map[string]interface{}
+			_ = json.Unmarshal(body, &rb)
+			requestBodies = append(requestBodies, rb)
+			fmt.Fprint(w, mockSLOUpdateResponse) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsUpdateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{
+		"slos", "update",
+		"--id", "abc123",
+		"--name", "API Availability Updated",
+		"--description", "New description",
+		"--thresholds", `[{"timeframe":"30d","target":99.95}]`,
+		"--tags", "env:prod,team:platform",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if callCount != 1 {
+		t.Errorf("UpdateSLO called %d times, want 1", callCount)
+	}
+	if len(requestBodies) == 0 {
+		t.Fatal("no request body captured")
+	}
+	rb := requestBodies[0]
+	if rb["name"] != "API Availability Updated" {
+		t.Errorf("name = %v, want %q", rb["name"], "API Availability Updated")
+	}
+	if rb["description"] != "New description" {
+		t.Errorf("description = %v, want %q", rb["description"], "New description")
+	}
+
+	out := buf.String()
+	for _, want := range []string{"abc123", "API Availability Updated", "99.95"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOsUpdate_PreservesUnchangedFields(t *testing.T) {
+	t.Parallel()
+	var updateBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockSLOGetForUpdate) //nolint:errcheck
+		} else {
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &updateBody)
+			fmt.Fprint(w, mockSLOUpdateResponse) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	// only update name, leave everything else unchanged
+	root, _ := buildSLOsUpdateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{
+		"slos", "update",
+		"--id", "abc123",
+		"--name", "New Name Only",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if updateBody["name"] != "New Name Only" {
+		t.Errorf("name = %v, want %q", updateBody["name"], "New Name Only")
+	}
+	// original description preserved
+	if updateBody["description"] != "Old description" {
+		t.Errorf("description = %v, want original %q", updateBody["description"], "Old description")
+	}
+	// original tags preserved
+	tags, ok := updateBody["tags"].([]interface{})
+	if !ok || len(tags) == 0 {
+		t.Errorf("tags not preserved: %v", updateBody["tags"])
+	}
+}
+
+func TestSLOsUpdate_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsUpdateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "update", "--name", "New Name"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for missing --id flag")
+	}
+}
+
+func TestSLOsUpdate_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockSLOGetForUpdate) //nolint:errcheck
+		} else {
+			fmt.Fprint(w, mockSLOUpdateResponse) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsUpdateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"--json", "slos", "update", "--id", "abc123", "--name", "Updated"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{`"id"`, "abc123"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
 func TestNewSLOsCommand_Subcommands(t *testing.T) {
 	t.Parallel()
 	cmd := NewSLOsCommand()
