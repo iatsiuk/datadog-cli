@@ -47,6 +47,11 @@ func defaultIncidentsAPI() (*incidentsAPI, error) {
 	ddCfg.SetUnstableOperationEnabled("v2.CreateIncidentIntegration", true)
 	ddCfg.SetUnstableOperationEnabled("v2.UpdateIncidentIntegration", true)
 	ddCfg.SetUnstableOperationEnabled("v2.DeleteIncidentIntegration", true)
+	ddCfg.SetUnstableOperationEnabled("v2.ListIncidentTypes", true)
+	ddCfg.SetUnstableOperationEnabled("v2.GetIncidentType", true)
+	ddCfg.SetUnstableOperationEnabled("v2.CreateIncidentType", true)
+	ddCfg.SetUnstableOperationEnabled("v2.UpdateIncidentType", true)
+	ddCfg.SetUnstableOperationEnabled("v2.DeleteIncidentType", true)
 	c, ctx := client.NewWithConfig(ddCfg, cfg)
 	return &incidentsAPI{api: datadogV2.NewIncidentsApi(c), ctx: ctx}, nil
 }
@@ -72,6 +77,7 @@ func NewIncidentsCommand(mkAPI ...func() (*incidentsAPI, error)) *cobra.Command 
 	cmd.AddCommand(newIncidentsDeleteCmd(mk))
 	cmd.AddCommand(newIncidentsTodoCmd(mk))
 	cmd.AddCommand(newIncidentsIntegrationCmd(mk))
+	cmd.AddCommand(newIncidentsTypeCmd(mk))
 	return cmd
 }
 

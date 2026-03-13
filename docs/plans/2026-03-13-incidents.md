@@ -111,13 +111,13 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 5: incidents type subcommands
 
-- [ ] write tests for `incidents type list`: outputs table (id, name, description, is_default)
-- [ ] write tests for `incidents type show <id>`: outputs detail view
-- [ ] write tests for `incidents type create`: parses --name, --description flags
-- [ ] write tests for `incidents type update <id>`: parses update flags
-- [ ] write tests for `incidents type delete <id>`: requires --yes flag
-- [ ] implement type subcommands in `incidents_type.go`
-- [ ] run tests - must pass before next task
+- [x] write tests for `incidents type list`: outputs table (id, name, description, is_default)
+- [x] write tests for `incidents type show <id>`: outputs detail view
+- [x] write tests for `incidents type create`: parses --name, --description flags
+- [x] write tests for `incidents type update <id>`: parses update flags
+- [x] write tests for `incidents type delete <id>`: requires --yes flag
+- [x] implement type subcommands in `incidents_type.go`
+- [x] run tests - must pass before next task
 
 ### Task 6: incidents service subcommands
 
