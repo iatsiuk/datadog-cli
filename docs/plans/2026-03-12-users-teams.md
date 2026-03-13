@@ -132,12 +132,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 13: Verify acceptance criteria
-- [ ] verify all user operations: list, show, create, invite, update, disable
-- [ ] verify all role operations: list, show, create, update, delete, grant/revoke permissions
-- [ ] verify all team operations: list, show, create, update, delete, add/remove members
-- [ ] verify edge cases: empty results, missing flags, `--yes` confirmation
-- [ ] run full test suite: `go test -race ./...`
-- [ ] run linter: `make build`
+- [x] verify all user operations: list, show, create, invite, update, disable
+- [x] verify all role operations: list, show, create, update, delete, grant/revoke permissions
+- [x] verify all team operations: list, show, create, update, delete, add/remove members
+- [x] verify edge cases: empty results, missing flags, `--yes` confirmation
+- [x] run full test suite: `go test -race ./...`
+- [x] run linter: `make build`
 
 ### Task 14: [Final] Update documentation
 - [ ] update CLAUDE.md API reference section with Users/Roles/Teams APIs
