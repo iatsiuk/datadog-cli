@@ -350,7 +350,7 @@ datadog-cli slos correction update --id <id> [--category <category>] [--start <t
 datadog-cli slos correction delete --id <id> --yes
 ```
 
-SLOs list output columns: `ID | NAME | TYPE | TARGET | TIMEFRAME | TAGS`
+SLOs list output columns: `ID | NAME | TYPE | THRESHOLDS | TAGS`
 
 Correction list output columns: `ID | SLO_ID | CATEGORY | START | END | DESCRIPTION`
 
