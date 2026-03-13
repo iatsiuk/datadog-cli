@@ -153,6 +153,42 @@ func TestRolesListEmptyResult(t *testing.T) {
 	}
 }
 
+func TestRolesListPaginationFlags(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildRolesListCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "list", "--page-size", "5", "--page-number", "2"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if got := req.URL.Query().Get("page[size]"); got != "5" {
+		t.Errorf("page[size] = %q, want %q", got, "5")
+	}
+	if got := req.URL.Query().Get("page[number]"); got != "2" {
+		t.Errorf("page[number] = %q, want %q", got, "2")
+	}
+}
+
 const mockRoleShowResponse = `{
 	"data": {
 		"type": "roles",

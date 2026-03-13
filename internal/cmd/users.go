@@ -48,6 +48,7 @@ func NewUsersCommand() *cobra.Command {
 
 func newUsersListCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 	var filter string
+	var pageSize, pageNumber int64
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -61,6 +62,12 @@ func newUsersListCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 			opts := datadogV2.NewListUsersOptionalParameters()
 			if filter != "" {
 				opts = opts.WithFilter(filter)
+			}
+			if pageSize > 0 {
+				opts = opts.WithPageSize(pageSize)
+			}
+			if cmd.Flags().Changed("page-number") {
+				opts = opts.WithPageNumber(pageNumber)
 			}
 
 			resp, httpResp, err := uapi.api.ListUsers(uapi.ctx, *opts)
@@ -89,6 +96,8 @@ func newUsersListCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&filter, "filter", "", "filter users by email or name")
+	cmd.Flags().Int64Var(&pageSize, "page-size", 0, "number of results per page")
+	cmd.Flags().Int64Var(&pageNumber, "page-number", 0, "page number (0-indexed)")
 	return cmd
 }
 

@@ -48,6 +48,7 @@ func NewRolesCommand() *cobra.Command {
 
 func newRolesListCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
 	var filter string
+	var pageSize, pageNumber int64
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -61,6 +62,12 @@ func newRolesListCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
 			opts := datadogV2.NewListRolesOptionalParameters()
 			if filter != "" {
 				opts = opts.WithFilter(filter)
+			}
+			if pageSize > 0 {
+				opts = opts.WithPageSize(pageSize)
+			}
+			if cmd.Flags().Changed("page-number") {
+				opts = opts.WithPageNumber(pageNumber)
 			}
 
 			resp, httpResp, err := rapi.api.ListRoles(rapi.ctx, *opts)
@@ -89,6 +96,8 @@ func newRolesListCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&filter, "filter", "", "filter roles by name")
+	cmd.Flags().Int64Var(&pageSize, "page-size", 0, "number of results per page")
+	cmd.Flags().Int64Var(&pageNumber, "page-number", 0, "page number (0-indexed)")
 	return cmd
 }
 

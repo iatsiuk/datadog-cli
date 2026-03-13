@@ -46,6 +46,7 @@ func NewTeamsCommand() *cobra.Command {
 
 func newTeamsListCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 	var filter string
+	var pageSize, pageNumber int64
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -59,6 +60,12 @@ func newTeamsListCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 			opts := datadogV2.NewListTeamsOptionalParameters()
 			if filter != "" {
 				opts = opts.WithFilterKeyword(filter)
+			}
+			if pageSize > 0 {
+				opts = opts.WithPageSize(pageSize)
+			}
+			if cmd.Flags().Changed("page-number") {
+				opts = opts.WithPageNumber(pageNumber)
 			}
 
 			resp, httpResp, err := tapi.api.ListTeams(tapi.ctx, *opts)
@@ -87,6 +94,8 @@ func newTeamsListCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&filter, "filter", "", "filter teams by keyword")
+	cmd.Flags().Int64Var(&pageSize, "page-size", 0, "number of results per page")
+	cmd.Flags().Int64Var(&pageNumber, "page-number", 0, "page number (0-indexed)")
 	return cmd
 }
 
@@ -304,6 +313,7 @@ func newTeamsDeleteCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 
 func newTeamsMembersCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 	var teamID string
+	var pageSize, pageNumber int64
 
 	cmd := &cobra.Command{
 		Use:   "members",
@@ -314,7 +324,15 @@ func newTeamsMembersCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 				return err
 			}
 
-			resp, httpResp, err := tapi.api.GetTeamMemberships(tapi.ctx, teamID)
+			opts := datadogV2.NewGetTeamMembershipsOptionalParameters()
+			if pageSize > 0 {
+				opts = opts.WithPageSize(pageSize)
+			}
+			if cmd.Flags().Changed("page-number") {
+				opts = opts.WithPageNumber(pageNumber)
+			}
+
+			resp, httpResp, err := tapi.api.GetTeamMemberships(tapi.ctx, teamID, *opts)
 			if httpResp != nil {
 				_ = httpResp.Body.Close()
 			}
@@ -341,6 +359,8 @@ func newTeamsMembersCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 
 	cmd.Flags().StringVar(&teamID, "id", "", "team ID")
 	_ = cmd.MarkFlagRequired("id")
+	cmd.Flags().Int64Var(&pageSize, "page-size", 0, "number of results per page")
+	cmd.Flags().Int64Var(&pageNumber, "page-number", 0, "page number (0-indexed)")
 	return cmd
 }
 
