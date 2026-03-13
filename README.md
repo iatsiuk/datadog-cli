@@ -185,7 +185,7 @@ Test search output columns: `TIMESTAMP | TEST | SUITE | STATUS | DURATION | SERV
 `--sort` accepts: `timestamp`, `-timestamp`
 `--compute` format: `<fn>[:<metric>]` (e.g. `count`, `avg:duration`)
 `--status` for pipeline create: `success`, `error`, `canceled`, `skipped`, `blocked`
-`--level` for pipeline create: `pipeline` (default), `stage`, `job`, `step`
+`--level` for pipeline create: only `pipeline` is supported
 
 Time format for `--from` / `--to`: relative (`now`, `now-1h`, `now-7d`) or RFC3339.
 Default `--from` is `now-1h`, default `--to` is `now`.

@@ -765,6 +765,21 @@ func TestCIPipelineCreateGitBranchWithoutSha(t *testing.T) {
 	}
 }
 
+func TestCIPipelineCreateRepoURLWithoutGitArgs(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "create", "--pipeline-name", "test", "--status", "success", "--repo-url", "https://github.com/example/repo"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for --repo-url without --git-branch and --git-sha")
+	}
+}
+
 func TestCIPipelineAggregateInvalidCompute(t *testing.T) {
 	t.Parallel()
 
