@@ -101,13 +101,13 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 4: incidents integration subcommands
 
-- [ ] write tests for `incidents integration list <incident-id>`: outputs table (id, type, status)
-- [ ] write tests for `incidents integration show <incident-id> <integration-id>`: outputs detail view
-- [ ] write tests for `incidents integration create <incident-id>`: parses --type (slack|jira), --metadata flags
-- [ ] write tests for `incidents integration update <incident-id> <integration-id>`: parses --metadata flag
-- [ ] write tests for `incidents integration delete <incident-id> <integration-id>`: requires --yes flag
-- [ ] implement integration subcommands in `incidents_integration.go`
-- [ ] run tests - must pass before next task
+- [x] write tests for `incidents integration list <incident-id>`: outputs table (id, type, status)
+- [x] write tests for `incidents integration show <incident-id> <integration-id>`: outputs detail view
+- [x] write tests for `incidents integration create <incident-id>`: parses --type (slack|jira), --metadata flags
+- [x] write tests for `incidents integration update <incident-id> <integration-id>`: parses --metadata flag
+- [x] write tests for `incidents integration delete <incident-id> <integration-id>`: requires --yes flag
+- [x] implement integration subcommands in `incidents_integration.go`
+- [x] run tests - must pass before next task
 
 ### Task 5: incidents type subcommands
 
