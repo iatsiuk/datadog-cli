@@ -39,6 +39,8 @@ func NewUsersCommand() *cobra.Command {
 	cmd.AddCommand(newUsersShowCmd(defaultUsersAPI))
 	cmd.AddCommand(newUsersCreateCmd(defaultUsersAPI))
 	cmd.AddCommand(newUsersInviteCmd(defaultUsersAPI))
+	cmd.AddCommand(newUsersUpdateCmd(defaultUsersAPI))
+	cmd.AddCommand(newUsersDisableCmd(defaultUsersAPI))
 	return cmd
 }
 
@@ -239,6 +241,86 @@ func newUsersInviteCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&userID, "id", "", "user ID to invite")
+	_ = cmd.MarkFlagRequired("id")
+	return cmd
+}
+
+func newUsersUpdateCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
+	var userID, name, email string
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update a user",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			uapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewUserUpdateAttributes()
+			if name != "" {
+				attrs.SetName(name)
+			}
+			if email != "" {
+				attrs.SetEmail(email)
+			}
+			data := datadogV2.NewUserUpdateData(*attrs, userID, datadogV2.USERSTYPE_USERS)
+			body := datadogV2.NewUserUpdateRequest(*data)
+
+			resp, httpResp, err := uapi.api.UpdateUser(uapi.ctx, userID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update user: %w", err)
+			}
+
+			user := resp.GetData()
+			attrs2 := user.GetAttributes()
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated user: %s (%s)\n", attrs2.GetEmail(), user.GetId()) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&userID, "id", "", "user ID")
+	cmd.Flags().StringVar(&name, "name", "", "user display name")
+	cmd.Flags().StringVar(&email, "email", "", "user email address")
+	_ = cmd.MarkFlagRequired("id")
+	return cmd
+}
+
+func newUsersDisableCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
+	var userID string
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "disable",
+		Short: "Disable a user",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !yes {
+				return fmt.Errorf("pass --yes to confirm disabling user %s", userID)
+			}
+
+			uapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := uapi.api.DisableUser(uapi.ctx, userID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("disable user: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Disabled user: %s\n", userID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&userID, "id", "", "user ID")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm disabling the user")
 	_ = cmd.MarkFlagRequired("id")
 	return cmd
 }

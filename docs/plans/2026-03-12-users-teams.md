@@ -70,13 +70,13 @@
 - [x] run `make build` -- must pass
 
 ### Task 5: Users update/disable with tests
-- [ ] write tests for `users update --id <id> --name <name>` -- capture request body
-- [ ] write tests for `users update` -- only changed fields sent
-- [ ] write tests for `users disable --id <id> --yes` -- success
-- [ ] write tests for `users disable` -- missing `--yes` flag rejected
-- [ ] implement `newUsersUpdateCmd` -- call `UpdateUser`
-- [ ] implement `newUsersDisableCmd` -- require `--yes`, call `DisableUser`
-- [ ] run `make build` -- must pass
+- [x] write tests for `users update --id <id> --name <name>` -- capture request body
+- [x] write tests for `users update` -- only changed fields sent
+- [x] write tests for `users disable --id <id> --yes` -- success
+- [x] write tests for `users disable` -- missing `--yes` flag rejected
+- [x] implement `newUsersUpdateCmd` -- call `UpdateUser`
+- [x] implement `newUsersDisableCmd` -- require `--yes`, call `DisableUser`
+- [x] run `make build` -- must pass
 
 ### Task 6: Roles API wrapper and list with tests
 - [ ] write tests for `newTestRolesAPI` helper

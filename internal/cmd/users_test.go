@@ -488,3 +488,148 @@ func TestUsersInviteMissingID(t *testing.T) {
 		t.Fatal("expected error when --id flag is missing")
 	}
 }
+
+func buildUsersUpdateCmd(mkAPI func() (*usersAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	users.AddCommand(newUsersUpdateCmd(mkAPI))
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestUsersUpdateCapturesRequestBody(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			body, _ := io.ReadAll(r.Body) //nolint:errcheck
+			mu.Lock()
+			reqBody = body
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersUpdateCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "update", "--id", "user-abc-123", "--name", "Alice Updated"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+	if body == nil {
+		t.Fatal("no request body captured")
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("JSON unmarshal: %v", err)
+	}
+	data, _ := parsed["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["name"]; got != "Alice Updated" {
+		t.Errorf("name = %v, want Alice Updated", got)
+	}
+
+	if !strings.Contains(buf.String(), "Updated user") {
+		t.Errorf("output missing confirmation, got: %s", buf.String())
+	}
+}
+
+func TestUsersUpdateOnlyChangedFields(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			body, _ := io.ReadAll(r.Body) //nolint:errcheck
+			mu.Lock()
+			reqBody = body
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildUsersUpdateCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "update", "--id", "user-abc-123", "--name", "New Name"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("JSON unmarshal: %v", err)
+	}
+	data, _ := parsed["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	// email was not passed, should not be present
+	if _, ok := attrs["email"]; ok {
+		t.Errorf("email should not be in request when not specified, got: %v", attrs)
+	}
+}
+
+func buildUsersDisableCmd(mkAPI func() (*usersAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	users.AddCommand(newUsersDisableCmd(mkAPI))
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestUsersDisableSuccess(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersDisableCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "disable", "--id", "user-abc-123", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Disabled user") {
+		t.Errorf("output missing confirmation, got: %s", buf.String())
+	}
+}
+
+func TestUsersDisableMissingYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildUsersDisableCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "disable", "--id", "user-abc-123"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --yes flag is missing")
+	}
+}
