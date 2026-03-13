@@ -28,6 +28,11 @@ CLI tool for querying Datadog from the terminal.
 - `datadogV2.APMRetentionFiltersApi`: ListApmRetentionFilters, GetApmRetentionFilter, CreateApmRetentionFilter, UpdateApmRetentionFilter, DeleteApmRetentionFilter
 - `datadogV2.SpansMetricsApi`: ListSpansMetrics, GetSpansMetric, CreateSpansMetric, UpdateSpansMetric, DeleteSpansMetric
 
+### CI Visibility
+
+- `datadogV2.CIVisibilityPipelinesApi`: ListCIAppPipelineEvents, AggregateCIAppPipelineEvents, CreateCIAppPipelineEvent
+- `datadogV2.CIVisibilityTestsApi`: ListCIAppTestEvents, AggregateCIAppTestEvents
+
 ### Dashboards
 
 - `datadogV1.DashboardsApi`: ListDashboards, GetDashboard, CreateDashboard, UpdateDashboard, DeleteDashboard
