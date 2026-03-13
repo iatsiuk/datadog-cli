@@ -125,11 +125,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 12: Team members management with tests
-- [ ] write tests for `users teams members --id <id>` -- list team members (user_id, email, role)
-- [ ] write tests for `users teams add-member --id <id> --user-id <uid> --role <role>` -- capture request body
-- [ ] write tests for `users teams remove-member --id <id> --user-id <uid> --yes`
-- [ ] implement member management subcommands -- call `GetTeamMemberships`, `CreateTeamMembership`, `DeleteTeamMembership`
-- [ ] run `make build` -- must pass
+- [x] write tests for `users teams members --id <id>` -- list team members (user_id, email, role)
+- [x] write tests for `users teams add-member --id <id> --user-id <uid> --role <role>` -- capture request body
+- [x] write tests for `users teams remove-member --id <id> --user-id <uid> --yes`
+- [x] implement member management subcommands -- call `GetTeamMemberships`, `CreateTeamMembership`, `DeleteTeamMembership`
+- [x] run `make build` -- must pass
 
 ### Task 13: Verify acceptance criteria
 - [ ] verify all user operations: list, show, create, invite, update, disable

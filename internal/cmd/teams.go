@@ -38,6 +38,9 @@ func NewTeamsCommand() *cobra.Command {
 	cmd.AddCommand(newTeamsCreateCmd(defaultTeamsAPI))
 	cmd.AddCommand(newTeamsUpdateCmd(defaultTeamsAPI))
 	cmd.AddCommand(newTeamsDeleteCmd(defaultTeamsAPI))
+	cmd.AddCommand(newTeamsMembersCmd(defaultTeamsAPI))
+	cmd.AddCommand(newTeamsAddMemberCmd(defaultTeamsAPI))
+	cmd.AddCommand(newTeamsRemoveMemberCmd(defaultTeamsAPI))
 	return cmd
 }
 
@@ -292,6 +295,156 @@ func newTeamsDeleteCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deleting the team")
 	_ = cmd.MarkFlagRequired("id")
 	return cmd
+}
+
+func newTeamsMembersCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
+	var teamID string
+
+	cmd := &cobra.Command{
+		Use:   "members",
+		Short: "List team members",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := tapi.api.GetTeamMemberships(tapi.ctx, teamID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get team memberships: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				if data == nil {
+					data = []datadogV2.UserTeam{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			return printTeamMembersTable(cmd.OutOrStdout(), data)
+		},
+	}
+
+	cmd.Flags().StringVar(&teamID, "id", "", "team ID")
+	_ = cmd.MarkFlagRequired("id")
+	return cmd
+}
+
+func newTeamsAddMemberCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
+	var teamID, userID, role string
+
+	cmd := &cobra.Command{
+		Use:   "add-member",
+		Short: "Add a member to a team",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			userData := datadogV2.NewRelationshipToUserTeamUserData(userID, datadogV2.USERTEAMUSERTYPE_USERS)
+			userRel := datadogV2.NewRelationshipToUserTeamUser(*userData)
+			rels := datadogV2.NewUserTeamRelationships()
+			rels.SetUser(*userRel)
+
+			data := datadogV2.NewUserTeamCreate(datadogV2.USERTEAMTYPE_TEAM_MEMBERSHIPS)
+			data.SetRelationships(*rels)
+
+			if role != "" {
+				roleVal, rerr := datadogV2.NewUserTeamRoleFromValue(role)
+				if rerr != nil {
+					return fmt.Errorf("invalid role %q: must be 'admin'", role)
+				}
+				attrs := datadogV2.NewUserTeamAttributes()
+				attrs.SetRole(*roleVal)
+				data.SetAttributes(*attrs)
+			}
+
+			body := datadogV2.NewUserTeamRequest(*data)
+
+			_, httpResp, err := tapi.api.CreateTeamMembership(tapi.ctx, teamID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("add team member: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Added user %s to team %s\n", userID, teamID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&teamID, "id", "", "team ID")
+	cmd.Flags().StringVar(&userID, "user-id", "", "user ID to add")
+	cmd.Flags().StringVar(&role, "role", "", "member role (admin or leave empty for member)")
+	_ = cmd.MarkFlagRequired("id")
+	_ = cmd.MarkFlagRequired("user-id")
+	return cmd
+}
+
+func newTeamsRemoveMemberCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
+	var teamID, userID string
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "remove-member",
+		Short: "Remove a member from a team",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !yes {
+				return fmt.Errorf("pass --yes to confirm removing user %s from team %s", userID, teamID)
+			}
+
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := tapi.api.DeleteTeamMembership(tapi.ctx, teamID, userID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("remove team member: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Removed user %s from team %s\n", userID, teamID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&teamID, "id", "", "team ID")
+	cmd.Flags().StringVar(&userID, "user-id", "", "user ID to remove")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm removal")
+	_ = cmd.MarkFlagRequired("id")
+	_ = cmd.MarkFlagRequired("user-id")
+	return cmd
+}
+
+func printTeamMembersTable(w io.Writer, data []datadogV2.UserTeam) error {
+	headers := []string{"MEMBERSHIP_ID", "ROLE"}
+	var rows [][]string
+	for _, m := range data {
+		role := "member"
+		attrs := m.GetAttributes()
+		if r, ok := attrs.GetRoleOk(); ok && r != nil {
+			role = string(*r)
+		}
+		rows = append(rows, []string{
+			m.GetId(),
+			role,
+		})
+	}
+	return output.PrintTable(w, headers, rows)
 }
 
 func printTeamsTable(w io.Writer, data []datadogV2.Team) error {

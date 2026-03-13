@@ -407,3 +407,206 @@ func TestTeamsDeleteWithoutYes(t *testing.T) {
 		t.Fatal("expected error when --yes not provided")
 	}
 }
+
+const mockTeamMembersResponse = `{
+	"data": [{
+		"type": "team_memberships",
+		"id": "membership-001",
+		"attributes": {
+			"role": "admin"
+		}
+	}, {
+		"type": "team_memberships",
+		"id": "membership-002",
+		"attributes": {}
+	}]
+}`
+
+const mockTeamMembershipResponse = `{
+	"data": {
+		"type": "team_memberships",
+		"id": "membership-new",
+		"attributes": {}
+	}
+}`
+
+func buildTeamsMembersCmd(mkAPI func() (*teamsAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	teams := &cobra.Command{Use: "teams"}
+	teams.AddCommand(newTeamsMembersCmd(mkAPI))
+	teams.AddCommand(newTeamsAddMemberCmd(mkAPI))
+	teams.AddCommand(newTeamsRemoveMemberCmd(mkAPI))
+	users.AddCommand(teams)
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestTeamsMembersTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTeamMembersResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildTeamsMembersCmd(newTestTeamsAPI(srv))
+	root.SetArgs([]string{"users", "teams", "members", "--id", "team-abc-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got := buf.String()
+	for _, want := range []string{"MEMBERSHIP_ID", "ROLE", "membership-001", "admin", "membership-002", "member"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot: %s", want, got)
+		}
+	}
+}
+
+func TestTeamsMembersJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTeamMembersResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildTeamsMembersCmd(newTestTeamsAPI(srv))
+	root.SetArgs([]string{"--json", "users", "teams", "members", "--id", "team-abc-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(result))
+	}
+}
+
+func TestTeamsMembersMissingID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildTeamsMembersCmd(newTestTeamsAPI(srv))
+	root.SetArgs([]string{"users", "teams", "members"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for missing --id flag")
+	}
+}
+
+func TestTeamsAddMemberSuccess(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTeamMembershipResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildTeamsMembersCmd(newTestTeamsAPI(srv))
+	root.SetArgs([]string{"users", "teams", "add-member", "--id", "team-abc-123", "--user-id", "user-xyz-456", "--role", "admin"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Added user user-xyz-456 to team team-abc-123") {
+		t.Errorf("unexpected output: %s", buf.String())
+	}
+
+	data, ok := capturedBody["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing data in request body: %v", capturedBody)
+	}
+	rels, ok := data["relationships"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing relationships in request body: %v", data)
+	}
+	user, ok := rels["user"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing user relationship: %v", rels)
+	}
+	userData, ok := user["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing user data: %v", user)
+	}
+	if got := userData["id"]; got != "user-xyz-456" {
+		t.Errorf("user id = %v, want user-xyz-456", got)
+	}
+}
+
+func TestTeamsAddMemberRequiredFlags(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"missing id", []string{"users", "teams", "add-member", "--user-id", "user-xyz"}},
+		{"missing user-id", []string{"users", "teams", "add-member", "--id", "team-abc-123"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildTeamsMembersCmd(newTestTeamsAPI(srv))
+			root.SetArgs(tc.args)
+			if err := root.Execute(); err == nil {
+				t.Fatal("expected error for missing required flag")
+			}
+		})
+	}
+}
+
+func TestTeamsRemoveMemberWithYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildTeamsMembersCmd(newTestTeamsAPI(srv))
+	root.SetArgs([]string{"users", "teams", "remove-member", "--id", "team-abc-123", "--user-id", "user-xyz-456", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "Removed user user-xyz-456 from team team-abc-123") {
+		t.Errorf("unexpected output: %s", buf.String())
+	}
+}
+
+func TestTeamsRemoveMemberWithoutYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildTeamsMembersCmd(newTestTeamsAPI(srv))
+	root.SetArgs([]string{"users", "teams", "remove-member", "--id", "team-abc-123", "--user-id", "user-xyz-456"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --yes not provided")
+	}
+}
