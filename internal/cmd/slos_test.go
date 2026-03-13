@@ -887,6 +887,149 @@ func TestSLOsCanDelete_MissingID(t *testing.T) {
 	}
 }
 
+func buildSLOsCorrectionCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	slos := &cobra.Command{Use: "slos"}
+	slos.AddCommand(newSLOsCorrectionCmd(mkAPI))
+	root.AddCommand(slos)
+	return root, buf
+}
+
+const mockSLOCorrectionListResponse = `{
+	"data": [
+		{
+			"id": "corr123",
+			"type": "correction",
+			"attributes": {
+				"slo_id": "abc123",
+				"category": "Scheduled Maintenance",
+				"description": "weekly maintenance",
+				"start": 1700000000,
+				"end": 1700003600,
+				"timezone": "UTC"
+			}
+		},
+		{
+			"id": "corr456",
+			"type": "correction",
+			"attributes": {
+				"slo_id": "def456",
+				"category": "Deployment",
+				"start": 1700100000,
+				"end": 1700103600,
+				"timezone": "UTC"
+			}
+		}
+	]
+}`
+
+const mockSLOCorrectionShowResponse = `{
+	"data": {
+		"id": "corr123",
+		"type": "correction",
+		"attributes": {
+			"slo_id": "abc123",
+			"category": "Scheduled Maintenance",
+			"description": "weekly maintenance",
+			"start": 1700000000,
+			"end": 1700003600,
+			"timezone": "UTC"
+		}
+	}
+}`
+
+func TestSLOCorrectionList_TableOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCorrectionListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "correction", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"ID", "SLO_ID", "CATEGORY", "START", "END", "corr123", "abc123", "Scheduled Maintenance", "corr456", "def456", "Deployment"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOCorrectionList_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCorrectionListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"--json", "slos", "correction", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{`"id"`, "corr123", "Scheduled Maintenance"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOCorrectionShow_TableOutput(t *testing.T) {
+	t.Parallel()
+	var gotCorrectionID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// path: /api/v1/slo/corrections/{id}
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) > 0 {
+			gotCorrectionID = parts[len(parts)-1]
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCorrectionShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "correction", "show", "--id", "corr123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if gotCorrectionID != "corr123" {
+		t.Errorf("correction ID = %q, want %q", gotCorrectionID, "corr123")
+	}
+
+	out := buf.String()
+	for _, want := range []string{"corr123", "abc123", "Scheduled Maintenance", "weekly maintenance"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOCorrectionShow_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "correction", "show"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for missing --id flag")
+	}
+}
+
 func TestNewSLOsCommand_Subcommands(t *testing.T) {
 	t.Parallel()
 	cmd := NewSLOsCommand()
