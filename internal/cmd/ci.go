@@ -40,6 +40,7 @@ func NewCICommand() *cobra.Command {
 		Short: "Search and manage Datadog CI Visibility",
 	}
 	cmd.AddCommand(newCIPipelineCmd(defaultPipelinesAPI))
+	cmd.AddCommand(newCITestCmd(defaultTestsAPI))
 	return cmd
 }
 

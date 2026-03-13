@@ -87,12 +87,12 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 5: ci test search subcommand
 
-- [ ] write tests for `ci test search`: parses --query, --from, --to, --limit, --sort flags
-- [ ] write tests for `ci test search`: formats test events as table (timestamp, test_name, suite, status, duration, service)
-- [ ] write tests for `ci test search`: outputs JSON with --json flag
-- [ ] implement `internal/cmd/ci_tests.go` with testsAPI type
-- [ ] implement `ci test search` using `ListCIAppTestEvents()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `ci test search`: parses --query, --from, --to, --limit, --sort flags
+- [x] write tests for `ci test search`: formats test events as table (timestamp, test_name, suite, status, duration, service)
+- [x] write tests for `ci test search`: outputs JSON with --json flag
+- [x] implement `internal/cmd/ci_tests.go` with testsAPI type
+- [x] implement `ci test search` using `ListCIAppTestEvents()`
+- [x] run tests - must pass before next task
 
 ### Task 6: ci test tail subcommand
 
