@@ -41,6 +41,7 @@ func NewUsersCommand() *cobra.Command {
 	cmd.AddCommand(newUsersInviteCmd(defaultUsersAPI))
 	cmd.AddCommand(newUsersUpdateCmd(defaultUsersAPI))
 	cmd.AddCommand(newUsersDisableCmd(defaultUsersAPI))
+	cmd.AddCommand(NewRolesCommand())
 	return cmd
 }
 

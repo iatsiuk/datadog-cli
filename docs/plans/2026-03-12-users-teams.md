@@ -79,12 +79,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 6: Roles API wrapper and list with tests
-- [ ] write tests for `newTestRolesAPI` helper
-- [ ] write tests for `users roles list` -- table output (id, name, user_count, created_at)
-- [ ] write tests for `users roles list` -- JSON output
-- [ ] implement `rolesAPI` struct wrapping `datadogV2.RolesApi`
-- [ ] implement `newRolesListCmd` -- call `ListRoles` with optional filter/sort
-- [ ] run `make build` -- must pass
+- [x] write tests for `newTestRolesAPI` helper
+- [x] write tests for `users roles list` -- table output (id, name, user_count, created_at)
+- [x] write tests for `users roles list` -- JSON output
+- [x] implement `rolesAPI` struct wrapping `datadogV2.RolesApi`
+- [x] implement `newRolesListCmd` -- call `ListRoles` with optional filter/sort
+- [x] run `make build` -- must pass
 
 ### Task 7: Roles show/create with tests
 - [ ] write tests for `users roles show --id <id>` -- role details with permissions list
