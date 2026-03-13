@@ -2,12 +2,16 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/spf13/cobra"
 
 	"github.com/iatsiuk/datadog-cli/internal/client"
 	"github.com/iatsiuk/datadog-cli/internal/config"
+	"github.com/iatsiuk/datadog-cli/internal/output"
 )
 
 type slosAPI struct {
@@ -46,11 +50,76 @@ func NewSLOsCommand() *cobra.Command {
 	return cmd
 }
 
-func newSLOsListCmd(_ func() (*slosAPI, error)) *cobra.Command {
-	return &cobra.Command{
+func newSLOsListCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		query string
+		tags  string
+	)
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List SLOs",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			opts := datadogV1.NewListSLOsOptionalParameters()
+			if query != "" {
+				opts = opts.WithQuery(query)
+			}
+			if tags != "" {
+				opts = opts.WithTagsQuery(tags)
+			}
+
+			resp, httpResp, err := sapi.api.ListSLOs(sapi.ctx, *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list SLOs: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				if data == nil {
+					data = []datadogV1.ServiceLevelObjective{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "TAGS"}
+			var rows [][]string
+			for _, slo := range data {
+				target := ""
+				timeframe := ""
+				if thresholds := slo.GetThresholds(); len(thresholds) > 0 {
+					th := thresholds[0]
+					target = strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
+					timeframe = string(th.GetTimeframe())
+				}
+				rows = append(rows, []string{
+					slo.GetId(),
+					slo.GetName(),
+					string(slo.GetType()),
+					target,
+					timeframe,
+					strings.Join(slo.GetTags(), ", "),
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
 	}
+
+	cmd.Flags().StringVar(&query, "query", "", "filter SLOs by name/description")
+	cmd.Flags().StringVar(&tags, "tags", "", "filter SLOs by tags")
+	return cmd
 }
 
 func newSLOsShowCmd(_ func() (*slosAPI, error)) *cobra.Command {
