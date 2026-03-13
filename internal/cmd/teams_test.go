@@ -282,7 +282,11 @@ func TestTeamsShowJSONOutput(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, mockTeamSingleResponse) //nolint:errcheck
+		if strings.HasSuffix(r.URL.Path, "/memberships") {
+			fmt.Fprint(w, mockTeamMembersResponse) //nolint:errcheck
+		} else {
+			fmt.Fprint(w, mockTeamSingleResponse) //nolint:errcheck
+		}
 	}))
 	defer srv.Close()
 
@@ -296,8 +300,12 @@ func TestTeamsShowJSONOutput(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("JSON unmarshal: %v\noutput: %s", err, buf.String())
 	}
-	if got := result["id"]; got != "team-abc-123" {
-		t.Errorf("id = %v, want team-abc-123", got)
+	team, _ := result["team"].(map[string]interface{})
+	if got := team["id"]; got != "team-abc-123" {
+		t.Errorf("team.id = %v, want team-abc-123", got)
+	}
+	if _, ok := result["members"]; !ok {
+		t.Error("result missing members key")
 	}
 }
 

@@ -125,8 +125,20 @@ func newTeamsShowCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 			}
 
 			team := resp.GetData()
+
+			membResp, membHTTPResp, err := tapi.api.GetTeamMemberships(tapi.ctx, teamID, *datadogV2.NewGetTeamMembershipsOptionalParameters())
+			if membHTTPResp != nil {
+				_ = membHTTPResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get team memberships: %w", err)
+			}
+
 			if asJSON {
-				return output.PrintJSON(cmd.OutOrStdout(), team)
+				return output.PrintJSON(cmd.OutOrStdout(), struct {
+					Team    interface{} `json:"team"`
+					Members interface{} `json:"members"`
+				}{Team: team, Members: membResp.GetData()})
 			}
 
 			attrs := team.GetAttributes()
@@ -149,13 +161,6 @@ func newTeamsShowCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 				fmt.Fprintf(w, "%-12s %s\n", f.k+":", f.v) //nolint:errcheck
 			}
 
-			membResp, membHTTPResp, err := tapi.api.GetTeamMemberships(tapi.ctx, teamID, *datadogV2.NewGetTeamMembershipsOptionalParameters())
-			if membHTTPResp != nil {
-				_ = membHTTPResp.Body.Close()
-			}
-			if err != nil {
-				return fmt.Errorf("get team memberships: %w", err)
-			}
 			fmt.Fprintln(w) //nolint:errcheck
 			return printTeamMembersTable(w, membResp.GetData())
 		},

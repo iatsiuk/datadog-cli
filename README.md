@@ -387,7 +387,7 @@ datadog-cli users teams create --name <name> --handle <handle> [--description <t
 datadog-cli users teams update --id <id> [--name <name>] [--handle <handle>] [--description <text>]
 datadog-cli users teams delete --id <id> --yes
 datadog-cli users teams members --id <id>
-datadog-cli users teams add-member --id <id> --user-id <uid> [--role <admin|member>]
+datadog-cli users teams add-member --id <id> --user-id <uid> [--role <admin>]
 datadog-cli users teams remove-member --id <id> --user-id <uid> --yes
 ```
 
@@ -400,7 +400,7 @@ Teams list output columns: `ID | NAME | HANDLE | USER_COUNT | DESCRIPTION`
 `--filter` for users accepts a search string matched against email and name.
 `--filter` for roles and teams accepts a name filter string.
 `--title` for `users create` accepts a job title string.
-`--role` for `teams add-member` accepts `admin` or `member` (default: `member`).
+`--role` for `teams add-member` accepts `admin` (omit flag for regular member).
 `--handle` must be lowercase, alphanumeric with hyphens, and unique across the org.
 `--yes` is required for destructive operations (disable, delete, revoke, remove).
 

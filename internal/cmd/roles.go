@@ -332,16 +332,11 @@ func newRolesListPermissionsCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command 
 
 func newRolesGrantPermissionCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
 	var roleID, permissionID string
-	var yes bool
 
 	cmd := &cobra.Command{
 		Use:   "grant-permission",
 		Short: "Grant a permission to a role",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if !yes {
-				return fmt.Errorf("pass --yes to confirm granting permission %s to role %s", permissionID, roleID)
-			}
-
 			rapi, err := mkAPI()
 			if err != nil {
 				return err
@@ -367,7 +362,6 @@ func newRolesGrantPermissionCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command 
 
 	cmd.Flags().StringVar(&roleID, "role-id", "", "role ID")
 	cmd.Flags().StringVar(&permissionID, "permission-id", "", "permission ID")
-	cmd.Flags().BoolVar(&yes, "yes", false, "confirm grant")
 	_ = cmd.MarkFlagRequired("role-id")
 	_ = cmd.MarkFlagRequired("permission-id")
 	return cmd
