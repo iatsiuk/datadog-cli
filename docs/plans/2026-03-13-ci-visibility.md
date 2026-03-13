@@ -54,14 +54,14 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 1: ci command group and pipeline search subcommand
 
-- [ ] write tests for `ci pipeline search`: parses --query, --from, --to, --limit, --sort flags
-- [ ] write tests for `ci pipeline search`: formats pipeline events as table (timestamp, pipeline_name, status, duration, git_branch)
-- [ ] write tests for `ci pipeline search`: outputs JSON with --json flag
-- [ ] write tests for `ci pipeline search`: defaults --from to "now-1h" when omitted
-- [ ] implement `internal/cmd/ci.go` with `NewCICommand()`, pipelinesAPI type
-- [ ] implement `ci pipeline search` using `ListCIAppPipelineEvents()`
-- [ ] register `ci` command in root.go
-- [ ] run tests - must pass before next task
+- [x] write tests for `ci pipeline search`: parses --query, --from, --to, --limit, --sort flags
+- [x] write tests for `ci pipeline search`: formats pipeline events as table (timestamp, pipeline_name, status, duration, git_branch)
+- [x] write tests for `ci pipeline search`: outputs JSON with --json flag
+- [x] write tests for `ci pipeline search`: defaults --from to "now-1h" when omitted
+- [x] implement `internal/cmd/ci.go` with `NewCICommand()`, pipelinesAPI type
+- [x] implement `ci pipeline search` using `ListCIAppPipelineEvents()`
+- [x] register `ci` command in root.go
+- [x] run tests - must pass before next task
 
 ### Task 2: ci pipeline tail subcommand
 
