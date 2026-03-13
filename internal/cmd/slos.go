@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +34,52 @@ func defaultSLOsAPI() (*slosAPI, error) {
 		corrections: datadogV1.NewServiceLevelObjectiveCorrectionsApi(c),
 		ctx:         ctx,
 	}, nil
+}
+
+func sloTableRows(slos []datadogV1.ServiceLevelObjective) ([]string, [][]string) {
+	headers := []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "TAGS"}
+	var rows [][]string
+	for _, slo := range slos {
+		target := ""
+		timeframe := ""
+		if ths := slo.GetThresholds(); len(ths) > 0 {
+			th := ths[0]
+			target = strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
+			timeframe = string(th.GetTimeframe())
+		}
+		rows = append(rows, []string{
+			slo.GetId(),
+			slo.GetName(),
+			string(slo.GetType()),
+			target,
+			timeframe,
+			strings.Join(slo.GetTags(), ", "),
+		})
+	}
+	return headers, rows
+}
+
+func printCorrectionTable(w io.Writer, data datadogV1.SLOCorrection) error {
+	attrs := data.GetAttributes()
+	start := ""
+	if s := attrs.Start; s != nil {
+		start = time.Unix(*s, 0).UTC().Format(time.RFC3339)
+	}
+	end := ""
+	if e, ok := attrs.GetEndOk(); ok && e != nil {
+		end = time.Unix(*e, 0).UTC().Format(time.RFC3339)
+	}
+	headers := []string{"FIELD", "VALUE"}
+	rows := [][]string{
+		{"ID", data.GetId()},
+		{"SLO ID", attrs.GetSloId()},
+		{"Category", string(attrs.GetCategory())},
+		{"Description", attrs.GetDescription()},
+		{"Start", start},
+		{"End", end},
+		{"Timezone", attrs.GetTimezone()},
+	}
+	return output.PrintTable(w, headers, rows)
 }
 
 // NewSLOsCommand returns the slos cobra command group.
@@ -97,25 +143,7 @@ func newSLOsListCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			headers := []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "TAGS"}
-			var rows [][]string
-			for _, slo := range data {
-				target := ""
-				timeframe := ""
-				if thresholds := slo.GetThresholds(); len(thresholds) > 0 {
-					th := thresholds[0]
-					target = strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
-					timeframe = string(th.GetTimeframe())
-				}
-				rows = append(rows, []string{
-					slo.GetId(),
-					slo.GetName(),
-					string(slo.GetType()),
-					target,
-					timeframe,
-					strings.Join(slo.GetTags(), ", "),
-				})
-			}
+			headers, rows := sloTableRows(data)
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
 	}
@@ -363,25 +391,7 @@ func newSLOsCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			headers := []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "TAGS"}
-			var rows [][]string
-			for _, slo := range data {
-				target := ""
-				timeframe := ""
-				if ths := slo.GetThresholds(); len(ths) > 0 {
-					th := ths[0]
-					target = strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
-					timeframe = string(th.GetTimeframe())
-				}
-				rows = append(rows, []string{
-					slo.GetId(),
-					slo.GetName(),
-					string(slo.GetType()),
-					target,
-					timeframe,
-					strings.Join(slo.GetTags(), ", "),
-				})
-			}
+			headers, rows := sloTableRows(data)
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
 	}
@@ -459,6 +469,9 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				if err := json.Unmarshal([]byte(thresholds), &rawThresholds); err != nil {
 					return fmt.Errorf("--thresholds: %w", err)
 				}
+				if len(rawThresholds) == 0 {
+					return fmt.Errorf("--thresholds must not be empty")
+				}
 				sloThresholds := make([]datadogV1.SLOThreshold, len(rawThresholds))
 				for i, t := range rawThresholds {
 					th := datadogV1.NewSLOThreshold(t.Target, datadogV1.SLOTimeframe(t.Timeframe))
@@ -513,25 +526,7 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			headers := []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "TAGS"}
-			var rows [][]string
-			for _, slo := range data {
-				target := ""
-				timeframe := ""
-				if ths := slo.GetThresholds(); len(ths) > 0 {
-					th := ths[0]
-					target = strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
-					timeframe = string(th.GetTimeframe())
-				}
-				rows = append(rows, []string{
-					slo.GetId(),
-					slo.GetName(),
-					string(slo.GetType()),
-					target,
-					timeframe,
-					strings.Join(slo.GetTags(), ", "),
-				})
-			}
+			headers, rows := sloTableRows(data)
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
 	}
@@ -556,7 +551,7 @@ func newSLOsDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete",
 		Short: "Delete an SLO",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if id == "" {
 				return fmt.Errorf("--id is required")
 			}
@@ -581,11 +576,11 @@ func newSLOsDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			errs := resp.GetErrors()
 			if len(errs) > 0 {
 				for k, v := range errs {
-					fmt.Fprintf(os.Stderr, "error deleting %s: %s\n", k, v)
+					fmt.Fprintf(cmd.ErrOrStderr(), "error deleting %s: %s\n", k, v) //nolint:errcheck
 				}
 			}
 			if len(deleted) > 0 {
-				fmt.Printf("deleted: %s\n", strings.Join(deleted, ", "))
+				fmt.Fprintf(cmd.OutOrStdout(), "deleted: %s\n", strings.Join(deleted, ", ")) //nolint:errcheck
 			}
 			return nil
 		},
@@ -753,27 +748,7 @@ func newSLOCorrectionShowCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			attrs := data.GetAttributes()
-			start := ""
-			if s := attrs.Start; s != nil {
-				start = time.Unix(*s, 0).UTC().Format(time.RFC3339)
-			}
-			end := ""
-			if e, ok := attrs.GetEndOk(); ok && e != nil {
-				end = time.Unix(*e, 0).UTC().Format(time.RFC3339)
-			}
-
-			headers := []string{"FIELD", "VALUE"}
-			rows := [][]string{
-				{"ID", data.GetId()},
-				{"SLO ID", attrs.GetSloId()},
-				{"Category", string(attrs.GetCategory())},
-				{"Description", attrs.GetDescription()},
-				{"Start", start},
-				{"End", end},
-				{"Timezone", attrs.GetTimezone()},
-			}
-			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+			return printCorrectionTable(cmd.OutOrStdout(), data)
 		},
 	}
 
@@ -856,28 +831,7 @@ func newSLOCorrectionCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			if asJSON {
 				return output.PrintJSON(cmd.OutOrStdout(), corrData)
 			}
-
-			corrAttrs := corrData.GetAttributes()
-			start := ""
-			if s := corrAttrs.Start; s != nil {
-				start = time.Unix(*s, 0).UTC().Format(time.RFC3339)
-			}
-			end := ""
-			if e, ok := corrAttrs.GetEndOk(); ok && e != nil {
-				end = time.Unix(*e, 0).UTC().Format(time.RFC3339)
-			}
-
-			headers := []string{"FIELD", "VALUE"}
-			rows := [][]string{
-				{"ID", corrData.GetId()},
-				{"SLO ID", corrAttrs.GetSloId()},
-				{"Category", string(corrAttrs.GetCategory())},
-				{"Description", corrAttrs.GetDescription()},
-				{"Start", start},
-				{"End", end},
-				{"Timezone", corrAttrs.GetTimezone()},
-			}
-			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+			return printCorrectionTable(cmd.OutOrStdout(), corrData)
 		},
 	}
 
@@ -960,28 +914,7 @@ func newSLOCorrectionUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			if asJSON {
 				return output.PrintJSON(cmd.OutOrStdout(), corrData)
 			}
-
-			corrAttrs := corrData.GetAttributes()
-			start := ""
-			if s := corrAttrs.Start; s != nil {
-				start = time.Unix(*s, 0).UTC().Format(time.RFC3339)
-			}
-			end := ""
-			if e, ok := corrAttrs.GetEndOk(); ok && e != nil {
-				end = time.Unix(*e, 0).UTC().Format(time.RFC3339)
-			}
-
-			headers := []string{"FIELD", "VALUE"}
-			rows := [][]string{
-				{"ID", corrData.GetId()},
-				{"SLO ID", corrAttrs.GetSloId()},
-				{"Category", string(corrAttrs.GetCategory())},
-				{"Description", corrAttrs.GetDescription()},
-				{"Start", start},
-				{"End", end},
-				{"Timezone", corrAttrs.GetTimezone()},
-			}
-			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+			return printCorrectionTable(cmd.OutOrStdout(), corrData)
 		},
 	}
 
@@ -1003,7 +936,7 @@ func newSLOCorrectionDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete",
 		Short: "Delete an SLO correction",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if id == "" {
 				return fmt.Errorf("--id is required")
 			}
@@ -1024,7 +957,7 @@ func newSLOCorrectionDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				return fmt.Errorf("delete SLO correction: %w", err)
 			}
 
-			fmt.Printf("deleted: %s\n", id)
+			fmt.Fprintf(cmd.OutOrStdout(), "deleted: %s\n", id) //nolint:errcheck
 			return nil
 		},
 	}

@@ -360,6 +360,7 @@ Correction list output columns: `ID | SLO_ID | CATEGORY | START | END | DESCRIPT
 `--numerator` / `--denominator` are metric queries for metric-based SLOs
 `--monitor-ids` is a comma-separated list of monitor IDs for monitor-based SLOs
 `--category` accepts: `Scheduled Maintenance`, `Deployment`, `Infrastructure Issue`, `Other`
+`--from` / `--to` for `slos history` accept unix timestamps or relative time (e.g. `now-7d`, `now-30d`)
 `--start` / `--end` accept unix timestamps or relative time (e.g. `now-7d`)
 
 ## Shell Completion

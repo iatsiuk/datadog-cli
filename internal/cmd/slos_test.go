@@ -40,37 +40,20 @@ func newTestSLOsAPI(srv *httptest.Server) func() (*slosAPI, error) {
 	}
 }
 
-func TestNewTestSLOsAPI(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(nil)
-	defer srv.Close()
-
-	mkAPI := newTestSLOsAPI(srv)
-	api, err := mkAPI()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if api == nil {
-		t.Fatal("expected non-nil slosAPI")
-	}
-	if api.api == nil {
-		t.Fatal("expected non-nil ServiceLevelObjectivesApi")
-	}
-	if api.corrections == nil {
-		t.Fatal("expected non-nil ServiceLevelObjectiveCorrectionsApi")
-	}
-}
-
-func buildSLOsListCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+func buildSLOsSubCmd(sub *cobra.Command) (*cobra.Command, *bytes.Buffer) {
 	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
 	root.SetErr(&bytes.Buffer{})
 	slos := &cobra.Command{Use: "slos"}
-	slos.AddCommand(newSLOsListCmd(mkAPI))
+	slos.AddCommand(sub)
 	root.AddCommand(slos)
 	return root, buf
+}
+
+func buildSLOsListCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	return buildSLOsSubCmd(newSLOsListCmd(mkAPI))
 }
 
 const mockSLOsListResponse = `{
@@ -198,15 +181,7 @@ func TestSLOsList_Empty(t *testing.T) {
 }
 
 func buildSLOsShowCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "datadog-cli"}
-	root.PersistentFlags().Bool("json", false, "output as JSON")
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(&bytes.Buffer{})
-	slos := &cobra.Command{Use: "slos"}
-	slos.AddCommand(newSLOsShowCmd(mkAPI))
-	root.AddCommand(slos)
-	return root, buf
+	return buildSLOsSubCmd(newSLOsShowCmd(mkAPI))
 }
 
 const mockSLOShowResponse = `{
@@ -283,15 +258,7 @@ func TestSLOsShow_MissingID(t *testing.T) {
 }
 
 func buildSLOsHistoryCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "datadog-cli"}
-	root.PersistentFlags().Bool("json", false, "output as JSON")
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(&bytes.Buffer{})
-	slos := &cobra.Command{Use: "slos"}
-	slos.AddCommand(newSLOsHistoryCmd(mkAPI))
-	root.AddCommand(slos)
-	return root, buf
+	return buildSLOsSubCmd(newSLOsHistoryCmd(mkAPI))
 }
 
 const mockSLOHistoryResponse = `{
@@ -436,15 +403,7 @@ func TestSLOsHistory_MissingFlags(t *testing.T) {
 }
 
 func buildSLOsCreateCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "datadog-cli"}
-	root.PersistentFlags().Bool("json", false, "output as JSON")
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(&bytes.Buffer{})
-	slos := &cobra.Command{Use: "slos"}
-	slos.AddCommand(newSLOsCreateCmd(mkAPI))
-	root.AddCommand(slos)
-	return root, buf
+	return buildSLOsSubCmd(newSLOsCreateCmd(mkAPI))
 }
 
 const mockSLOCreateResponse = `{
@@ -542,6 +501,13 @@ func TestSLOsCreate_MonitorSLO(t *testing.T) {
 	if len(ids) != 2 {
 		t.Errorf("monitor_ids len = %d, want 2", len(ids))
 	}
+	// verify specific values (JSON numbers are float64)
+	if ids[0] != float64(1234) {
+		t.Errorf("monitor_ids[0] = %v, want 1234", ids[0])
+	}
+	if ids[1] != float64(5678) {
+		t.Errorf("monitor_ids[1] = %v, want 5678", ids[1])
+	}
 }
 
 func TestSLOsCreate_RequiredFlags(t *testing.T) {
@@ -572,6 +538,14 @@ func TestSLOsCreate_RequiredFlags(t *testing.T) {
 		{
 			"monitor missing monitor-ids",
 			[]string{"slos", "create", "--name", "X", "--type", "monitor", "--thresholds", `[{"timeframe":"7d","target":99.0}]`},
+		},
+		{
+			"empty thresholds array",
+			[]string{"slos", "create", "--name", "X", "--type", "metric", "--thresholds", `[]`, "--numerator", "n", "--denominator", "d"},
+		},
+		{
+			"invalid thresholds json",
+			[]string{"slos", "create", "--name", "X", "--type", "metric", "--thresholds", `not-json`, "--numerator", "n", "--denominator", "d"},
 		},
 	}
 
@@ -617,15 +591,7 @@ func TestSLOsCreate_JSONOutput(t *testing.T) {
 }
 
 func buildSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "datadog-cli"}
-	root.PersistentFlags().Bool("json", false, "output as JSON")
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(&bytes.Buffer{})
-	slos := &cobra.Command{Use: "slos"}
-	slos.AddCommand(newSLOsUpdateCmd(mkAPI))
-	root.AddCommand(slos)
-	return root, buf
+	return buildSLOsSubCmd(newSLOsUpdateCmd(mkAPI))
 }
 
 const mockSLOGetForUpdate = `{
@@ -697,6 +663,20 @@ func TestSLOsUpdate_RequestBody(t *testing.T) {
 	}
 	if rb["description"] != "New description" {
 		t.Errorf("description = %v, want %q", rb["description"], "New description")
+	}
+	ths, ok := rb["thresholds"].([]interface{})
+	if !ok || len(ths) == 0 {
+		t.Fatalf("thresholds missing or wrong type: %v", rb["thresholds"])
+	}
+	th0, ok := ths[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("thresholds[0] wrong type: %v", ths[0])
+	}
+	if th0["target"] != float64(99.95) {
+		t.Errorf("thresholds[0].target = %v, want 99.95", th0["target"])
+	}
+	if th0["timeframe"] != "30d" {
+		t.Errorf("thresholds[0].timeframe = %v, want 30d", th0["timeframe"])
 	}
 
 	out := buf.String()
@@ -786,27 +766,11 @@ func TestSLOsUpdate_JSONOutput(t *testing.T) {
 }
 
 func buildSLOsDeleteCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "datadog-cli"}
-	root.PersistentFlags().Bool("json", false, "output as JSON")
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(&bytes.Buffer{})
-	slos := &cobra.Command{Use: "slos"}
-	slos.AddCommand(newSLOsDeleteCmd(mkAPI))
-	root.AddCommand(slos)
-	return root, buf
+	return buildSLOsSubCmd(newSLOsDeleteCmd(mkAPI))
 }
 
 func buildSLOsCanDeleteCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "datadog-cli"}
-	root.PersistentFlags().Bool("json", false, "output as JSON")
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(&bytes.Buffer{})
-	slos := &cobra.Command{Use: "slos"}
-	slos.AddCommand(newSLOsCanDeleteCmd(mkAPI))
-	root.AddCommand(slos)
-	return root, buf
+	return buildSLOsSubCmd(newSLOsCanDeleteCmd(mkAPI))
 }
 
 func TestSLOsDelete_Success(t *testing.T) {
@@ -817,10 +781,13 @@ func TestSLOsDelete_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	root, _ := buildSLOsDeleteCmd(newTestSLOsAPI(srv))
+	root, buf := buildSLOsDeleteCmd(newTestSLOsAPI(srv))
 	root.SetArgs([]string{"slos", "delete", "--id", "abc123", "--yes"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(buf.String(), "abc123") {
+		t.Errorf("output missing deleted ID\nfull output:\n%s", buf.String())
 	}
 }
 
@@ -887,16 +854,50 @@ func TestSLOsCanDelete_MissingID(t *testing.T) {
 	}
 }
 
+func TestSLOsCanDelete_BlockedSLOs(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"ok":[]},"errors":{"abc123":"used by monitor 42"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCanDeleteCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "can-delete", "--id", "abc123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"abc123", "blocked"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOsCanDelete_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"ok":["abc123"]},"errors":{}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCanDeleteCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"--json", "slos", "can-delete", "--id", "abc123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{`"data"`, "abc123"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
 func buildSLOsCorrectionCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
-	root := &cobra.Command{Use: "datadog-cli"}
-	root.PersistentFlags().Bool("json", false, "output as JSON")
-	buf := &bytes.Buffer{}
-	root.SetOut(buf)
-	root.SetErr(&bytes.Buffer{})
-	slos := &cobra.Command{Use: "slos"}
-	slos.AddCommand(newSLOsCorrectionCmd(mkAPI))
-	root.AddCommand(slos)
-	return root, buf
+	return buildSLOsSubCmd(newSLOsCorrectionCmd(mkAPI))
 }
 
 const mockSLOCorrectionListResponse = `{
@@ -1220,6 +1221,27 @@ func TestSLOCorrectionUpdate_MissingID(t *testing.T) {
 	}
 }
 
+func TestSLOCorrectionUpdate_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCorrectionUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"--json", "slos", "correction", "update", "--id", "corr123", "--category", "Deployment"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{`"id"`, "corr123"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
 func TestSLOCorrectionDelete_Success(t *testing.T) {
 	t.Parallel()
 	var gotPath string
@@ -1229,7 +1251,7 @@ func TestSLOCorrectionDelete_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	root, _ := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
 	root.SetArgs([]string{"slos", "correction", "delete", "--id", "corr123", "--yes"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -1237,6 +1259,9 @@ func TestSLOCorrectionDelete_Success(t *testing.T) {
 
 	if !strings.Contains(gotPath, "corr123") {
 		t.Errorf("path %q does not contain correction ID", gotPath)
+	}
+	if !strings.Contains(buf.String(), "corr123") {
+		t.Errorf("output missing deleted correction ID\nfull output:\n%s", buf.String())
 	}
 }
 
