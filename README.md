@@ -355,8 +355,7 @@ SLOs list output columns: `ID | NAME | TYPE | TARGET | TIMEFRAME | TAGS`
 Correction list output columns: `ID | SLO_ID | CATEGORY | START | END | DESCRIPTION`
 
 `--type` accepts: `metric` (custom query), `monitor` (based on existing monitors)
-`--thresholds` accepts a JSON array, e.g. `[{"timeframe":"30d","target":99.9}]`
-`--timeframe` accepts: `7d`, `30d`, `90d`, `custom`
+`--thresholds` accepts a JSON array, e.g. `[{"timeframe":"30d","target":99.9}]` (timeframe values: `7d`, `30d`, `90d`, `custom`)
 `--numerator` / `--denominator` are metric queries for metric-based SLOs
 `--monitor-ids` is a comma-separated list of monitor IDs for monitor-based SLOs
 `--category` accepts: `Scheduled Maintenance`, `Deployment`, `Infrastructure Issue`, `Other`
