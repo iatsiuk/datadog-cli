@@ -23,6 +23,7 @@ func NewRootCommand(version string) *cobra.Command {
 	root.AddCommand(NewMetricsCommand())
 	root.AddCommand(NewMonitorsCommand())
 	root.AddCommand(NewRUMCommand())
+	root.AddCommand(NewSecurityCommand())
 	root.AddCommand(NewSLOsCommand())
 	root.AddCommand(NewUsersCommand())
 	return root
