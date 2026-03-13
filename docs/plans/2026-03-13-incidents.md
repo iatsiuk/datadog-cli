@@ -91,13 +91,13 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 3: incidents todo subcommands
 
-- [ ] write tests for `incidents todo list <incident-id>`: outputs table (id, description, assignees, completed)
-- [ ] write tests for `incidents todo show <incident-id> <todo-id>`: outputs detail view
-- [ ] write tests for `incidents todo create <incident-id>`: parses --description, --assignee flags
-- [ ] write tests for `incidents todo update <incident-id> <todo-id>`: parses --description, --completed flags
-- [ ] write tests for `incidents todo delete <incident-id> <todo-id>`: requires --yes flag
-- [ ] implement todo subcommands in `incidents_todo.go`
-- [ ] run tests - must pass before next task
+- [x] write tests for `incidents todo list <incident-id>`: outputs table (id, description, assignees, completed)
+- [x] write tests for `incidents todo show <incident-id> <todo-id>`: outputs detail view
+- [x] write tests for `incidents todo create <incident-id>`: parses --description, --assignee flags
+- [x] write tests for `incidents todo update <incident-id> <todo-id>`: parses --description, --completed flags
+- [x] write tests for `incidents todo delete <incident-id> <todo-id>`: requires --yes flag
+- [x] implement todo subcommands in `incidents_todo.go`
+- [x] run tests - must pass before next task
 
 ### Task 4: incidents integration subcommands
 
