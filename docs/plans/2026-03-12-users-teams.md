@@ -109,12 +109,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 10: Teams API wrapper and list with tests
-- [ ] write tests for `newTestTeamsAPI` helper
-- [ ] write tests for `users teams list` -- table output (id, name, handle, user_count, description)
-- [ ] write tests for `users teams list` -- JSON output, with `--filter` flag
-- [ ] implement `teamsAPI` struct wrapping `datadogV2.TeamsApi`
-- [ ] implement `newTeamsListCmd` -- call `ListTeams` with optional filter/sort
-- [ ] run `make build` -- must pass
+- [x] write tests for `newTestTeamsAPI` helper
+- [x] write tests for `users teams list` -- table output (id, name, handle, user_count, description)
+- [x] write tests for `users teams list` -- JSON output, with `--filter` flag
+- [x] implement `teamsAPI` struct wrapping `datadogV2.TeamsApi`
+- [x] implement `newTeamsListCmd` -- call `ListTeams` with optional filter/sort
+- [x] run `make build` -- must pass
 
 ### Task 11: Teams show/create/update/delete with tests
 - [ ] write tests for `users teams show --id <id>` -- team details with member list
