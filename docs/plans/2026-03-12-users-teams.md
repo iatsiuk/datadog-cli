@@ -38,13 +38,13 @@
 ## Implementation Steps
 
 ### Task 1: Users API wrapper and command skeleton with tests
-- [ ] write tests for `newTestUsersAPI` helper (mock server creation)
-- [ ] write tests for `NewUsersCommand()` returning correct subcommands
-- [ ] implement `usersAPI` struct wrapping `datadogV2.UsersApi` in `internal/cmd/users.go`
-- [ ] implement `defaultUsersAPI()` with config loading and client creation
-- [ ] implement `NewUsersCommand()` with subcommand registration
-- [ ] register `NewUsersCommand()` in `root.go`
-- [ ] run `make build` -- must pass
+- [x] write tests for `newTestUsersAPI` helper (mock server creation)
+- [x] write tests for `NewUsersCommand()` returning correct subcommands
+- [x] implement `usersAPI` struct wrapping `datadogV2.UsersApi` in `internal/cmd/users.go`
+- [x] implement `defaultUsersAPI()` with config loading and client creation
+- [x] implement `NewUsersCommand()` with subcommand registration
+- [x] register `NewUsersCommand()` in `root.go`
+- [x] run `make build` -- must pass
 
 ### Task 2: Users list with tests
 - [ ] write tests for `users list` -- table output (id, email, name, handle, status, role, created_at)
