@@ -114,6 +114,15 @@ func newDowntimeListCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
 						if e := sched.DowntimeScheduleOneTimeResponse.End.Get(); e != nil {
 							end = e.Format("2006-01-02 15:04:05")
 						}
+					} else if sched.DowntimeScheduleRecurrencesResponse != nil {
+						if cur := sched.DowntimeScheduleRecurrencesResponse.CurrentDowntime; cur != nil {
+							if s := cur.Start; s != nil && !s.IsZero() {
+								start = s.Format("2006-01-02 15:04:05")
+							}
+							if e := cur.End.Get(); e != nil {
+								end = e.Format("2006-01-02 15:04:05")
+							}
+						}
 					}
 				}
 
@@ -197,6 +206,15 @@ func printDowntimeTable(cmd *cobra.Command, d datadogV2.DowntimeResponseData) er
 			}
 			if e := sched.DowntimeScheduleOneTimeResponse.End.Get(); e != nil {
 				rows = append(rows, []string{"END", e.Format("2006-01-02 15:04:05")})
+			}
+		} else if sched.DowntimeScheduleRecurrencesResponse != nil {
+			if cur := sched.DowntimeScheduleRecurrencesResponse.CurrentDowntime; cur != nil {
+				if s := cur.Start; s != nil && !s.IsZero() {
+					rows = append(rows, []string{"START", s.Format("2006-01-02 15:04:05")})
+				}
+				if e := cur.End.Get(); e != nil {
+					rows = append(rows, []string{"END", e.Format("2006-01-02 15:04:05")})
+				}
 			}
 		}
 	}

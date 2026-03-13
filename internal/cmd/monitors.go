@@ -513,9 +513,6 @@ func newMonitorsMuteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 			if monitorID == 0 {
 				return errMonitorIDRequired
 			}
-			if scope == "" {
-				return fmt.Errorf("--scope cannot be empty")
-			}
 
 			mapi, err := mkAPI()
 			if err != nil {
@@ -544,6 +541,9 @@ func newMonitorsMuteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 			body.SetQuery(existing.GetQuery())
 			body.SetMessage(existing.GetMessage())
 			body.SetTags(existing.GetTags())
+			if p := existing.GetPriority(); p != 0 {
+				body.SetPriority(p)
+			}
 			body.SetOptions(opts)
 
 			_, httpResp, err = mapi.api.UpdateMonitor(mapi.ctx, monitorID, *body)
@@ -611,6 +611,9 @@ func newMonitorsUnmuteCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 			body.SetQuery(existing.GetQuery())
 			body.SetMessage(existing.GetMessage())
 			body.SetTags(existing.GetTags())
+			if p := existing.GetPriority(); p != 0 {
+				body.SetPriority(p)
+			}
 			body.SetOptions(opts)
 
 			_, httpResp, err = mapi.api.UpdateMonitor(mapi.ctx, monitorID, *body)
