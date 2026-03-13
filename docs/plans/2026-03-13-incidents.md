@@ -58,12 +58,12 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 0: Deduplicate - verify no overlap with existing commands
 
-- [ ] grep existing `internal/cmd/*.go` for any usage of `IncidentsApi`, `IncidentServicesApi`, `IncidentTeamsApi` - must find zero matches
-- [ ] grep existing commands for subcommands named `incidents`, `incident` - must find zero matches
-- [ ] verify `monitors` command does not expose incident management (monitors track alerts, not incidents - but confirm no overlap)
-- [ ] verify `incidents service` and `incidents team` do not duplicate `users teams` functionality (incidents teams are IncidentTeamsApi, users teams are TeamsApi - different APIs, but confirm no conceptual overlap in CLI UX)
-- [ ] check root.go registration - confirm no command already covers incidents scope
-- [ ] document findings: if overlap found, update plan to reuse/extend existing code instead of creating new
+- [x] grep existing `internal/cmd/*.go` for any usage of `IncidentsApi`, `IncidentServicesApi`, `IncidentTeamsApi` - must find zero matches
+- [x] grep existing commands for subcommands named `incidents`, `incident` - must find zero matches
+- [x] verify `monitors` command does not expose incident management (monitors track alerts, not incidents - but confirm no overlap)
+- [x] verify `incidents service` and `incidents team` do not duplicate `users teams` functionality (incidents teams are IncidentTeamsApi, users teams are TeamsApi - different APIs, but confirm no conceptual overlap in CLI UX)
+- [x] check root.go registration - confirm no command already covers incidents scope
+- [x] document findings: if overlap found, update plan to reuse/extend existing code instead of creating new
 
 ### Task 1: incidents command group, list and search subcommands
 
