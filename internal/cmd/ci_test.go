@@ -735,6 +735,36 @@ func TestCIPipelineCreateGitShaWithoutBranch(t *testing.T) {
 	}
 }
 
+func TestCIPipelineCreateNonPipelineLevel(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "create", "--pipeline-name", "test", "--status", "success", "--level", "stage"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for non-pipeline --level value")
+	}
+}
+
+func TestCIPipelineCreateGitBranchWithoutSha(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "create", "--pipeline-name", "test", "--status", "success", "--git-branch", "main"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for --git-branch without --git-sha")
+	}
+}
+
 func TestCIPipelineAggregateInvalidCompute(t *testing.T) {
 	t.Parallel()
 

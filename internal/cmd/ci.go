@@ -249,7 +249,6 @@ func newCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 						return nil
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
-					currSeen = make(map[string]struct{})
 				} else {
 					prevSeen = nextSeen
 					currSeen = make(map[string]struct{})
@@ -436,14 +435,10 @@ func newCIPipelineCreateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command 
 				return fmt.Errorf("--status: %w", err)
 			}
 
-			level := datadogV2.CIAPPPIPELINEEVENTPIPELINELEVEL_PIPELINE
-			if levelStr != "" && levelStr != string(datadogV2.CIAPPPIPELINEEVENTPIPELINELEVEL_PIPELINE) {
-				l, err := datadogV2.NewCIAppPipelineEventPipelineLevelFromValue(levelStr)
-				if err != nil {
-					return fmt.Errorf("--level: %w", err)
-				}
-				level = *l
+			if levelStr != string(datadogV2.CIAPPPIPELINEEVENTPIPELINELEVEL_PIPELINE) {
+				return fmt.Errorf(`--level: only "pipeline" is supported for this command`)
 			}
+			level := datadogV2.CIAPPPIPELINEEVENTPIPELINELEVEL_PIPELINE
 
 			now := time.Now().UTC()
 			uniqueID := fmt.Sprintf("%d", now.UnixNano())

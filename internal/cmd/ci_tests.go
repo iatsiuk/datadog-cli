@@ -234,7 +234,6 @@ func newCITestTailCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 						return nil
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
-					currSeen = make(map[string]struct{})
 				} else {
 					prevSeen = nextSeen
 					currSeen = make(map[string]struct{})
