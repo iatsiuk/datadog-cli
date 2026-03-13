@@ -137,6 +137,7 @@ func newUsersShowCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 				createdAt = t.UTC().Format(time.RFC3339)
 			}
 			roles := extractUserRoleIDs(user)
+			orgs := extractOrgNames(resp.GetIncluded())
 
 			fields := []struct{ k, v string }{
 				{"ID", user.GetId()},
@@ -145,6 +146,7 @@ func newUsersShowCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 				{"Handle", attrs.GetHandle()},
 				{"Status", attrs.GetStatus()},
 				{"Title", attrs.GetTitle()},
+				{"Orgs", strings.Join(orgs, ", ")},
 				{"Roles", strings.Join(roles, ", ")},
 				{"Created", createdAt},
 			}
@@ -370,6 +372,19 @@ func printUsersTable(w io.Writer, data []datadogV2.User) error {
 		})
 	}
 	return output.PrintTable(w, headers, rows)
+}
+
+func extractOrgNames(included []datadogV2.UserResponseIncludedItem) []string {
+	var names []string
+	for _, item := range included {
+		if org := item.Organization; org != nil {
+			attrs := org.GetAttributes()
+			if name := attrs.GetName(); name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
 }
 
 func extractUserRoleIDs(u datadogV2.User) []string {

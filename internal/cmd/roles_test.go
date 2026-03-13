@@ -649,7 +649,7 @@ func TestRolesGrantPermissionSuccess(t *testing.T) {
 	defer srv.Close()
 
 	root, buf := buildRolesGrantPermissionCmd(newTestRolesAPI(srv))
-	root.SetArgs([]string{"users", "roles", "grant-permission", "--role-id", "role-abc-123", "--permission-id", "perm-001"})
+	root.SetArgs([]string{"users", "roles", "grant-permission", "--role-id", "role-abc-123", "--permission-id", "perm-001", "--yes"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -735,6 +735,19 @@ func TestRolesRevokePermissionMissingYes(t *testing.T) {
 
 	root, _ := buildRolesRevokePermissionCmd(newTestRolesAPI(srv))
 	root.SetArgs([]string{"users", "roles", "revoke-permission", "--role-id", "role-abc-123", "--permission-id", "perm-001"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --yes not provided")
+	}
+}
+
+func TestRolesGrantPermissionMissingYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildRolesGrantPermissionCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "grant-permission", "--role-id", "role-abc-123", "--permission-id", "perm-001"})
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected error when --yes not provided")
 	}

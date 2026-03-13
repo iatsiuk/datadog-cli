@@ -292,7 +292,12 @@ const mockUserShowResponse = `{
 				"data": [{"type": "roles", "id": "role-xyz"}]
 			}
 		}
-	}
+	},
+	"included": [{
+		"type": "orgs",
+		"id": "org-001",
+		"attributes": {"name": "Acme Corp"}
+	}]
 }`
 
 func buildUsersShowCmd(mkAPI func() (*usersAPI, error)) (*cobra.Command, *bytes.Buffer) {
@@ -323,7 +328,7 @@ func TestUsersShowTableOutput(t *testing.T) {
 	}
 
 	got := buf.String()
-	checks := []string{"user-abc-123", "alice@example.com", "Alice Smith", "alice.smith", "Active", "Engineer", "role-xyz"}
+	checks := []string{"user-abc-123", "alice@example.com", "Alice Smith", "alice.smith", "Active", "Engineer", "Acme Corp", "role-xyz"}
 	for _, want := range checks {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\ngot: %s", want, got)

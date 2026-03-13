@@ -255,7 +255,11 @@ func TestTeamsShowTableOutput(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, mockTeamSingleResponse) //nolint:errcheck
+		if strings.HasSuffix(r.URL.Path, "/memberships") {
+			fmt.Fprint(w, mockTeamMembersResponse) //nolint:errcheck
+		} else {
+			fmt.Fprint(w, mockTeamSingleResponse) //nolint:errcheck
+		}
 	}))
 	defer srv.Close()
 
@@ -266,7 +270,7 @@ func TestTeamsShowTableOutput(t *testing.T) {
 	}
 
 	got := buf.String()
-	for _, want := range []string{"team-abc-123", "Platform Team", "platform-team", "Core platform engineers", "8"} {
+	for _, want := range []string{"team-abc-123", "Platform Team", "platform-team", "Core platform engineers", "8", "membership-001", "user-111", "admin"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\ngot: %s", want, got)
 		}
