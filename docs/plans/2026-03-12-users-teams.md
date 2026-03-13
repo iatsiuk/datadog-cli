@@ -117,12 +117,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 11: Teams show/create/update/delete with tests
-- [ ] write tests for `users teams show --id <id>` -- team details with member list
-- [ ] write tests for `users teams create --name <name> --handle <handle>` -- capture request body
-- [ ] write tests for `users teams update --id <id>` -- changed fields only
-- [ ] write tests for `users teams delete --id <id> --yes`
-- [ ] implement CRUD subcommands for teams
-- [ ] run `make build` -- must pass
+- [x] write tests for `users teams show --id <id>` -- team details with member list
+- [x] write tests for `users teams create --name <name> --handle <handle>` -- capture request body
+- [x] write tests for `users teams update --id <id>` -- changed fields only
+- [x] write tests for `users teams delete --id <id> --yes`
+- [x] implement CRUD subcommands for teams
+- [x] run `make build` -- must pass
 
 ### Task 12: Team members management with tests
 - [ ] write tests for `users teams members --id <id>` -- list team members (user_id, email, role)
