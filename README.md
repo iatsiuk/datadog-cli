@@ -362,6 +362,48 @@ Correction list output columns: `ID | SLO_ID | CATEGORY | START | END | DESCRIPT
 `--from` / `--to` for `slos history` accept unix timestamps or relative time (e.g. `now-7d`, `now-30d`)
 `--start` / `--end` accept unix timestamps or relative time (e.g. `now-7d`)
 
+### users
+
+Manage Datadog users, roles, and teams.
+
+```
+datadog-cli users list [--filter <query>]
+datadog-cli users show --id <id>
+datadog-cli users create --email <email> [--name <name>] [--role <role-id>]
+datadog-cli users invite --email <email>
+datadog-cli users update --id <id> [--name <name>] [--email <email>]
+datadog-cli users disable --id <id> --yes
+datadog-cli users roles list [--filter <name>]
+datadog-cli users roles show --id <id>
+datadog-cli users roles create --name <name>
+datadog-cli users roles update --id <id> --name <name>
+datadog-cli users roles delete --id <id> --yes
+datadog-cli users roles list-permissions --role-id <id>
+datadog-cli users roles grant-permission --role-id <id> --permission-id <id>
+datadog-cli users roles revoke-permission --role-id <id> --permission-id <id> --yes
+datadog-cli users teams list [--filter <query>]
+datadog-cli users teams show --id <id>
+datadog-cli users teams create --name <name> --handle <handle> [--description <text>]
+datadog-cli users teams update --id <id> [--name <name>] [--handle <handle>] [--description <text>]
+datadog-cli users teams delete --id <id> --yes
+datadog-cli users teams members --id <id>
+datadog-cli users teams add-member --id <id> --user-id <uid> [--role <admin|member>]
+datadog-cli users teams remove-member --id <id> --user-id <uid> --yes
+```
+
+Users list output columns: `ID | EMAIL | NAME | HANDLE | STATUS | ROLE | CREATED_AT`
+
+Roles list output columns: `ID | NAME | USER_COUNT | CREATED_AT`
+
+Teams list output columns: `ID | NAME | HANDLE | USER_COUNT | DESCRIPTION`
+
+`--filter` for users accepts a search string matched against email and name.
+`--filter` for roles and teams accepts a name filter string.
+`--role` for `users create` accepts a role ID to assign at creation.
+`--role` for `teams add-member` accepts `admin` or `member` (default: `member`).
+`--handle` must be lowercase, alphanumeric with hyphens, and unique across the org.
+`--yes` is required for destructive operations (disable, delete, revoke, remove).
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.

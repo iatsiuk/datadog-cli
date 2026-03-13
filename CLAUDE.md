@@ -62,6 +62,18 @@ CLI tool for querying Datadog from the terminal.
 - `datadogV1.ServiceLevelObjectivesApi`: ListSLOs, GetSLO, CreateSLO, UpdateSLO, DeleteSLO, CheckCanDeleteSLO, GetSLOHistory
 - `datadogV1.ServiceLevelObjectiveCorrectionsApi`: ListSLOCorrection, GetSLOCorrection, CreateSLOCorrection, UpdateSLOCorrection, DeleteSLOCorrection
 
+### Users
+
+- `datadogV2.UsersApi`: ListUsers, GetUser, CreateUser, UpdateUser, DisableUser, SendInvitations
+
+### Roles
+
+- `datadogV2.RolesApi`: ListRoles, GetRole, CreateRole, UpdateRole, DeleteRole, ListRolePermissions, AddPermissionToRole, RemovePermissionFromRole
+
+### Teams
+
+- `datadogV2.TeamsApi`: ListTeams, GetTeam, CreateTeam, UpdateTeam, DeleteTeam, GetTeamMemberships, CreateTeamMembership, DeleteTeamMembership
+
 ## Code Style
 
 ### Imports

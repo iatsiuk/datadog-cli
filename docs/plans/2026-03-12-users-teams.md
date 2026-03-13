@@ -140,8 +140,8 @@
 - [x] run linter: `make build`
 
 ### Task 14: [Final] Update documentation
-- [ ] update CLAUDE.md API reference section with Users/Roles/Teams APIs
-- [ ] update README.md with users command examples
+- [x] update CLAUDE.md API reference section with Users/Roles/Teams APIs
+- [x] update README.md with users command examples
 
 ## Technical Details
 - **User statuses**: `Active`, `Pending`, `Disabled`
