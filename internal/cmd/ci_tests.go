@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -33,6 +34,7 @@ func newCITestCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 		Short: "CI test events",
 	}
 	cmd.AddCommand(newCITestSearchCmd(mkAPI))
+	cmd.AddCommand(newCITestTailCmd(mkAPI))
 	return cmd
 }
 
@@ -137,5 +139,120 @@ func newCITestSearchCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 	cmd.Flags().StringVar(&toStr, "to", "now", "end time, e.g. now")
 	cmd.Flags().IntVar(&limit, "limit", 50, "max number of events to return")
 	cmd.Flags().StringVar(&sortStr, "sort", "", "sort order: timestamp or -timestamp")
+	return cmd
+}
+
+func newCITestTailCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
+	var query string
+
+	cmd := &cobra.Command{
+		Use:   "tail",
+		Short: "Tail CI test events in real time",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			tapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			const ingestionOverlap = 10 * time.Second
+			since := time.Now()
+			var prevSeen map[string]struct{}
+			currSeen := map[string]struct{}{}
+
+			for {
+				to := time.Now()
+				baseOpts := datadogV2.NewListCIAppTestEventsOptionalParameters().
+					WithFilterFrom(since.UTC()).
+					WithFilterTo(to.UTC()).
+					WithPageLimit(100)
+				if query != "" {
+					baseOpts = baseOpts.WithFilterQuery(query)
+				}
+
+				nextSeen := map[string]struct{}{}
+				opts := *baseOpts
+				apiErr := func() error {
+					for {
+						resp, httpResp, innerErr := tapi.api.ListCIAppTestEvents(tapi.ctx, opts)
+						if httpResp != nil {
+							_ = httpResp.Body.Close()
+						}
+						if innerErr != nil {
+							return innerErr
+						}
+						for _, event := range resp.GetData() {
+							id := event.GetId()
+							if id == "" {
+								continue
+							}
+							nextSeen[id] = struct{}{}
+							if _, inPrev := prevSeen[id]; inPrev {
+								continue
+							}
+							if _, inCurr := currSeen[id]; inCurr {
+								continue
+							}
+							if asJSON {
+								_ = output.PrintJSON(cmd.OutOrStdout(), event)
+							} else {
+								eventAttrs := event.GetAttributes()
+								attrs := eventAttrs.GetAttributes()
+								ts := strAttr(attrs, "@timestamp")
+								testName := strAttr(attrs, "test.name")
+								suite := strAttr(attrs, "test.suite")
+								status := strAttr(attrs, "test.status")
+								service := strAttr(attrs, "service")
+								duration := ""
+								if d, ok := attrs["duration"]; ok {
+									switch v := d.(type) {
+									case float64:
+										duration = (time.Duration(int64(v)) * time.Nanosecond).String()
+									case int64:
+										duration = (time.Duration(v) * time.Nanosecond).String()
+									}
+								}
+								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\t%s\n",
+									ts, testName, suite, status, duration, service)
+							}
+						}
+						cursor := ""
+						if resp.Meta != nil && resp.Meta.Page != nil {
+							cursor = resp.Meta.Page.GetAfter()
+						}
+						if cursor == "" {
+							break
+						}
+						opts = *baseOpts
+						opts.PageCursor = &cursor
+					}
+					return nil
+				}()
+
+				if apiErr != nil {
+					if errors.Is(apiErr, context.Canceled) || errors.Is(apiErr, context.DeadlineExceeded) {
+						return nil
+					}
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
+				} else {
+					prevSeen = currSeen
+					currSeen = nextSeen
+					since = to.Add(-ingestionOverlap)
+				}
+
+				select {
+				case <-tapi.ctx.Done():
+					return nil
+				case <-time.After(ciTailPollInterval):
+				}
+			}
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "test event search query")
 	return cmd
 }

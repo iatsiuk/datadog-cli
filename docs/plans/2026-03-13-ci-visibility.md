@@ -96,10 +96,10 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 6: ci test tail subcommand
 
-- [ ] write tests for `ci test tail`: parses --query flag
-- [ ] write tests for `ci test tail`: polls and prints new test events
-- [ ] implement `ci test tail` using `ListCIAppTestEvents()` in a poll loop
-- [ ] run tests - must pass before next task
+- [x] write tests for `ci test tail`: parses --query flag
+- [x] write tests for `ci test tail`: polls and prints new test events
+- [x] implement `ci test tail` using `ListCIAppTestEvents()` in a poll loop
+- [x] run tests - must pass before next task
 
 ### Task 7: ci test aggregate subcommand
 
