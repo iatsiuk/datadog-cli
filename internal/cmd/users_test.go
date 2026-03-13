@@ -1,12 +1,19 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"github.com/spf13/cobra"
 )
 
 func newTestUsersAPI(srv *httptest.Server) func() (*usersAPI, error) {
@@ -50,5 +57,180 @@ func TestNewUsersCommand_Use(t *testing.T) {
 	cmd := NewUsersCommand()
 	if cmd.Use != "users" {
 		t.Errorf("Use = %q, want %q", cmd.Use, "users")
+	}
+}
+
+func TestNewUsersCommand_Subcommands(t *testing.T) {
+	t.Parallel()
+	cmd := NewUsersCommand()
+	names := make(map[string]bool)
+	for _, sub := range cmd.Commands() {
+		names[sub.Use] = true
+	}
+	if !names["list"] {
+		t.Error("expected 'list' subcommand")
+	}
+}
+
+const mockUsersResponse = `{
+	"data": [{
+		"type": "users",
+		"id": "user-abc-123",
+		"attributes": {
+			"email": "alice@example.com",
+			"name": "Alice Smith",
+			"handle": "alice.smith",
+			"status": "Active",
+			"created_at": "2024-01-15T10:30:00.000Z"
+		},
+		"relationships": {
+			"roles": {
+				"data": [{"type": "roles", "id": "role-xyz"}]
+			}
+		}
+	}],
+	"meta": {"page": {"total_filtered_count": 1, "total_count": 1}}
+}`
+
+func buildUsersListCmd(mkAPI func() (*usersAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	users.AddCommand(newUsersListCmd(mkAPI))
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestUsersListTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUsersResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersListCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got := buf.String()
+	checks := []string{"ID", "EMAIL", "NAME", "HANDLE", "STATUS", "ROLES", "CREATED_AT",
+		"user-abc-123", "alice@example.com", "Alice Smith", "alice.smith", "Active", "role-xyz"}
+	for _, want := range checks {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot: %s", want, got)
+		}
+	}
+}
+
+func TestUsersListJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUsersResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersListCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"--json", "users", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if len(result) != 1 {
+		t.Fatalf("expected 1 user, got %d", len(result))
+	}
+	if got := result[0]["id"]; got != "user-abc-123" {
+		t.Errorf("id = %v, want user-abc-123", got)
+	}
+}
+
+func TestUsersListFilterFlag(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu          sync.Mutex
+		capturedReq *http.Request
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReq = r
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildUsersListCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "list", "--filter", "alice"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	req := capturedReq
+	mu.Unlock()
+	if req == nil {
+		t.Fatal("no request made to mock server")
+	}
+	if got := req.URL.Query().Get("filter"); got != "alice" {
+		t.Errorf("filter = %q, want %q", got, "alice")
+	}
+}
+
+func TestUsersListEmptyResult(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersListCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// headers should still be printed
+	got := buf.String()
+	if !strings.Contains(got, "ID") {
+		t.Errorf("expected header row, got: %s", got)
+	}
+}
+
+func TestUsersListEmptyResultJSON(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersListCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"--json", "users", "list"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if len(result) != 0 {
+		t.Errorf("expected empty array, got %d items", len(result))
 	}
 }

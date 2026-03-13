@@ -47,12 +47,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 2: Users list with tests
-- [ ] write tests for `users list` -- table output (id, email, name, handle, status, role, created_at)
-- [ ] write tests for `users list` -- JSON output mode
-- [ ] write tests for `users list` -- with `--filter` flag (search by email/name)
-- [ ] write tests for `users list` -- empty result
-- [ ] implement `newUsersListCmd` -- call `ListUsers` with optional filter/sort/pagination
-- [ ] run `make build` -- must pass
+- [x] write tests for `users list` -- table output (id, email, name, handle, status, role, created_at)
+- [x] write tests for `users list` -- JSON output mode
+- [x] write tests for `users list` -- with `--filter` flag (search by email/name)
+- [x] write tests for `users list` -- empty result
+- [x] implement `newUsersListCmd` -- call `ListUsers` with optional filter/sort/pagination
+- [x] run `make build` -- must pass
 
 ### Task 3: Users show with tests
 - [ ] write tests for `users show --id <id>` -- full user details including orgs and permissions
