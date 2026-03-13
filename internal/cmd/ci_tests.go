@@ -187,6 +187,9 @@ func newCITestTailCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 							if id == "" {
 								continue
 							}
+							if _, inNext := nextSeen[id]; inNext {
+								continue
+							}
 							nextSeen[id] = struct{}{}
 							if _, inPrev := prevSeen[id]; inPrev {
 								continue
@@ -194,6 +197,7 @@ func newCITestTailCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 							if _, inCurr := currSeen[id]; inCurr {
 								continue
 							}
+							currSeen[id] = struct{}{}
 							if asJSON {
 								_ = output.PrintJSON(cmd.OutOrStdout(), event)
 							} else {

@@ -202,6 +202,9 @@ func newCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 							if id == "" {
 								continue
 							}
+							if _, inNext := nextSeen[id]; inNext {
+								continue
+							}
 							nextSeen[id] = struct{}{}
 							if _, inPrev := prevSeen[id]; inPrev {
 								continue
@@ -209,6 +212,7 @@ func newCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 							if _, inCurr := currSeen[id]; inCurr {
 								continue
 							}
+							currSeen[id] = struct{}{}
 							if asJSON {
 								_ = output.PrintJSON(cmd.OutOrStdout(), event)
 							} else {
@@ -440,12 +444,11 @@ func newCIPipelineCreateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command 
 				now, level, pipelineName, false, now, *status, uniqueID, "",
 			)
 
+			if gitBranch != "" && gitSha == "" {
+				return fmt.Errorf("--git-sha is required when --git-branch is specified")
+			}
 			if gitBranch != "" || gitSha != "" {
-				sha := gitSha
-				if sha == "" {
-					sha = "unknown"
-				}
-				gitInfo := datadogV2.NewCIAppGitInfo("", "", sha)
+				gitInfo := datadogV2.NewCIAppGitInfo("", "", gitSha)
 				if gitBranch != "" {
 					gitInfo.Branch = *datadog.NewNullableString(&gitBranch)
 				}
