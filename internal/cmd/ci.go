@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -47,6 +49,7 @@ func newCIPipelineCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 	}
 	cmd.AddCommand(newCIPipelineSearchCmd(mkAPI))
 	cmd.AddCommand(newCIPipelineTailCmd(mkAPI))
+	cmd.AddCommand(newCIPipelineAggregateCmd(mkAPI))
 	return cmd
 }
 
@@ -265,6 +268,155 @@ func newCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 
 	cmd.Flags().StringVar(&query, "query", "", "pipeline event search query")
 	return cmd
+}
+
+func newCIPipelineAggregateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
+	var (
+		query   string
+		fromStr string
+		toStr   string
+		groupBy []string
+		compute string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "aggregate",
+		Short: "Aggregate CI pipeline events",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if compute == "" {
+				return fmt.Errorf("--compute is required")
+			}
+			aggFn, metric, err := parseCIComputeSpec(compute)
+			if err != nil {
+				return fmt.Errorf("--compute: %w", err)
+			}
+
+			papi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			if fromStr == "" {
+				fromStr = "now-1h"
+			}
+			if toStr == "" {
+				toStr = "now"
+			}
+
+			filter := datadogV2.NewCIAppPipelinesQueryFilter()
+			filter.SetFrom(fromStr)
+			filter.SetTo(toStr)
+			if query != "" {
+				filter.SetQuery(query)
+			}
+
+			c := datadogV2.NewCIAppCompute(aggFn)
+			if metric != "" {
+				c.SetMetric(metric)
+			}
+			computes := []datadogV2.CIAppCompute{*c}
+
+			var groups []datadogV2.CIAppPipelinesGroupBy
+			for _, facet := range groupBy {
+				groups = append(groups, *datadogV2.NewCIAppPipelinesGroupBy(facet))
+			}
+
+			req := datadogV2.NewCIAppPipelinesAggregateRequest()
+			req.SetFilter(*filter)
+			req.SetCompute(computes)
+			if len(groups) > 0 {
+				req.SetGroupBy(groups)
+			}
+
+			resp, httpResp, err := papi.api.AggregateCIAppPipelineEvents(papi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("aggregate pipeline events: %w", err)
+			}
+
+			respData := resp.GetData()
+			buckets := respData.GetBuckets()
+
+			groupHeaders := groupBy
+			var computeKeys []string
+			if len(buckets) > 0 {
+				for k := range buckets[0].GetComputes() {
+					computeKeys = append(computeKeys, k)
+				}
+				sort.Strings(computeKeys)
+			}
+
+			headers := append(groupHeaders, computeKeys...)
+			if len(headers) == 0 {
+				headers = []string{"BY", "COMPUTE"}
+			}
+
+			var rows [][]string
+			for _, bucket := range buckets {
+				by := bucket.GetBy()
+				bComputes := bucket.GetComputes()
+				row := make([]string, 0, len(headers))
+				for _, g := range groupHeaders {
+					v := ""
+					if val, ok := by[g]; ok {
+						v = fmt.Sprintf("%v", val)
+					}
+					row = append(row, v)
+				}
+				for _, k := range computeKeys {
+					v := ""
+					if bv, ok := bComputes[k]; ok {
+						switch {
+						case bv.CIAppAggregateBucketValueSingleNumber != nil:
+							v = fmt.Sprintf("%g", *bv.CIAppAggregateBucketValueSingleNumber)
+						case bv.CIAppAggregateBucketValueSingleString != nil:
+							v = *bv.CIAppAggregateBucketValueSingleString
+						case bv.CIAppAggregateBucketValueTimeseries != nil:
+							v = fmt.Sprintf("%d points", len(bv.CIAppAggregateBucketValueTimeseries.Items))
+						}
+					}
+					row = append(row, v)
+				}
+				rows = append(rows, row)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+			if asJSON {
+				if buckets == nil {
+					buckets = []datadogV2.CIAppPipelinesBucketResponse{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), buckets)
+			}
+
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "pipeline event search query")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time, supports date math (default now-1h)")
+	cmd.Flags().StringVar(&toStr, "to", "", "end time, supports date math (default now)")
+	cmd.Flags().StringSliceVar(&groupBy, "group-by", nil, "facets to group by (repeatable)")
+	cmd.Flags().StringVar(&compute, "compute", "", "aggregation function: count, sum, avg, min, max, etc.")
+	return cmd
+}
+
+// parseCIComputeSpec parses "count" or "sum:@metric" into aggregation function and metric.
+func parseCIComputeSpec(s string) (datadogV2.CIAppAggregationFunction, string, error) {
+	parts := strings.SplitN(s, ":", 2)
+	agg, err := datadogV2.NewCIAppAggregationFunctionFromValue(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("unknown aggregation %q", parts[0])
+	}
+	metric := ""
+	if len(parts) == 2 {
+		metric = parts[1]
+	}
+	return *agg, metric, nil
 }
 
 // strAttr extracts a string value from a map[string]interface{}.

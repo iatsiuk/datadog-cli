@@ -72,11 +72,11 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 3: ci pipeline aggregate subcommand
 
-- [ ] write tests for `ci pipeline aggregate`: parses --query, --from, --to, --group-by, --compute flags
-- [ ] write tests for `ci pipeline aggregate`: formats aggregation results as table
-- [ ] write tests for `ci pipeline aggregate`: outputs JSON with --json flag
-- [ ] implement `ci pipeline aggregate` using `AggregateCIAppPipelineEvents()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `ci pipeline aggregate`: parses --query, --from, --to, --group-by, --compute flags
+- [x] write tests for `ci pipeline aggregate`: formats aggregation results as table
+- [x] write tests for `ci pipeline aggregate`: outputs JSON with --json flag
+- [x] implement `ci pipeline aggregate` using `AggregateCIAppPipelineEvents()`
+- [x] run tests - must pass before next task
 
 ### Task 4: ci pipeline create subcommand
 
