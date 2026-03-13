@@ -447,6 +447,9 @@ func newCIPipelineCreateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command 
 			if gitBranch != "" && gitSha == "" {
 				return fmt.Errorf("--git-sha is required when --git-branch is specified")
 			}
+			if gitSha != "" && gitBranch == "" {
+				return fmt.Errorf("--git-branch is required when --git-sha is specified")
+			}
 			if gitBranch != "" || gitSha != "" {
 				gitInfo := datadogV2.NewCIAppGitInfo("", "", gitSha)
 				if gitBranch != "" {

@@ -720,6 +720,21 @@ func TestCIPipelineCreateInvalidLevel(t *testing.T) {
 	}
 }
 
+func TestCIPipelineCreateGitShaWithoutBranch(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "create", "--pipeline-name", "test", "--status", "success", "--git-sha", "abc123"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for --git-sha without --git-branch")
+	}
+}
+
 func TestCIPipelineAggregateInvalidCompute(t *testing.T) {
 	t.Parallel()
 
