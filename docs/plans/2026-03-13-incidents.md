@@ -67,15 +67,15 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 1: incidents command group, list and search subcommands
 
-- [ ] write tests for `incidents list`: outputs table (id, title, severity, status, created, commander)
-- [ ] write tests for `incidents list`: supports --page-size flag
-- [ ] write tests for `incidents list`: outputs JSON with --json flag
-- [ ] write tests for `incidents search`: parses --query flag, outputs same table format
-- [ ] implement `internal/cmd/incidents.go` with `NewIncidentsCommand()`, incidentsAPI type
-- [ ] implement `incidents list` using `ListIncidents()`
-- [ ] implement `incidents search` using `SearchIncidents()`
-- [ ] register `incidents` command in root.go
-- [ ] run tests - must pass before next task
+- [x] write tests for `incidents list`: outputs table (id, title, severity, status, created, commander)
+- [x] write tests for `incidents list`: supports --page-size flag
+- [x] write tests for `incidents list`: outputs JSON with --json flag
+- [x] write tests for `incidents search`: parses --query flag, outputs same table format
+- [x] implement `internal/cmd/incidents.go` with `NewIncidentsCommand()`, incidentsAPI type
+- [x] implement `incidents list` using `ListIncidents()`
+- [x] implement `incidents search` using `SearchIncidents()`
+- [x] register `incidents` command in root.go
+- [x] run tests - must pass before next task
 
 ### Task 2: incidents show, create, update, delete subcommands
 

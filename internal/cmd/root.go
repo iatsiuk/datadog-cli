@@ -17,6 +17,7 @@ func NewRootCommand(version string) *cobra.Command {
 	root.AddCommand(NewCICommand())
 	root.AddCommand(NewDashboardsCommand())
 	root.AddCommand(NewEventsCommand())
+	root.AddCommand(NewIncidentsCommand())
 	root.AddCommand(NewHostsCommand())
 	root.AddCommand(NewLogsCommand())
 	root.AddCommand(NewMetricsCommand())
