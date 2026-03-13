@@ -79,6 +79,16 @@ CLI tool for querying Datadog from the terminal.
 
 - `datadogV2.TeamsApi`: ListTeams, GetTeam, CreateTeam, UpdateTeam, DeleteTeam, GetTeamMemberships, CreateTeamMembership, DeleteTeamMembership
 
+### Incidents
+
+- `datadogV2.IncidentsApi`: ListIncidents, SearchIncidents, GetIncident, CreateIncident, UpdateIncident, DeleteIncident
+- `datadogV2.IncidentsApi`: ListIncidentTodos, GetIncidentTodo, CreateIncidentTodo, UpdateIncidentTodo, DeleteIncidentTodo
+- `datadogV2.IncidentsApi`: ListIncidentIntegrations, GetIncidentIntegration, CreateIncidentIntegration, UpdateIncidentIntegration, DeleteIncidentIntegration
+- `datadogV2.IncidentsApi`: ListIncidentTypes, GetIncidentType, CreateIncidentType, UpdateIncidentType, DeleteIncidentType
+- `datadogV2.IncidentServicesApi`: ListIncidentServices, GetIncidentService, CreateIncidentService, UpdateIncidentService, DeleteIncidentService
+- `datadogV2.IncidentTeamsApi`: ListIncidentTeams, GetIncidentTeam, CreateIncidentTeam, UpdateIncidentTeam, DeleteIncidentTeam
+- Note: All Incidents API operations require unstable operation flags via `ddCfg.SetUnstableOperationEnabled("v2.<OperationName>", true)`
+
 ## Code Style
 
 ### Imports

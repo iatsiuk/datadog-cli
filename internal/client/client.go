@@ -11,6 +11,12 @@ import (
 // New creates a configured Datadog API client and context with auth keys.
 // The returned context must be passed to all API calls.
 func New(cfg config.Config) (*datadog.APIClient, context.Context) {
+	return NewWithConfig(datadog.NewConfiguration(), cfg)
+}
+
+// NewWithConfig creates a Datadog API client using the provided configuration.
+// Useful when callers need to set unstable operation flags before creating the client.
+func NewWithConfig(ddCfg *datadog.Configuration, cfg config.Config) (*datadog.APIClient, context.Context) {
 	ctx := context.WithValue(
 		context.Background(),
 		datadog.ContextAPIKeys,
@@ -26,5 +32,5 @@ func New(cfg config.Config) (*datadog.APIClient, context.Context) {
 		map[string]string{"site": cfg.Site},
 	)
 
-	return datadog.NewAPIClient(datadog.NewConfiguration()), ctx
+	return datadog.NewAPIClient(ddCfg), ctx
 }

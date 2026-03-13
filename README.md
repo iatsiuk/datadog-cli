@@ -429,6 +429,66 @@ Teams list output columns: `ID | NAME | HANDLE | USER_COUNT | DESCRIPTION`
 `--handle` must be lowercase, alphanumeric with hyphens, and unique across the org.
 `--yes` is required for destructive operations (disable, delete, revoke, remove).
 
+### incidents
+
+Manage Datadog incidents, todos, integration metadata, types, services, and teams.
+
+```
+datadog-cli incidents list [--page-size <n>]
+datadog-cli incidents show <id>
+datadog-cli incidents search --query <query>
+datadog-cli incidents create --title <title> [--severity <SEV-0..SEV-5>] [--commander <user-id>]
+datadog-cli incidents update <id> [--title <title>] [--severity <SEV-0..SEV-5>] [--status <status>]
+datadog-cli incidents delete <id> --yes
+datadog-cli incidents todo list <incident-id>
+datadog-cli incidents todo show <incident-id> <todo-id>
+datadog-cli incidents todo create <incident-id> --description <text> [--assignee <handle>]
+datadog-cli incidents todo update <incident-id> <todo-id> [--description <text>] [--completed]
+datadog-cli incidents todo delete <incident-id> <todo-id> --yes
+datadog-cli incidents integration list <incident-id>
+datadog-cli incidents integration show <incident-id> <integration-id>
+datadog-cli incidents integration create <incident-id> --type <slack|jira> --metadata <json>
+datadog-cli incidents integration update <incident-id> <integration-id> [--metadata <json>]
+datadog-cli incidents integration delete <incident-id> <integration-id> --yes
+datadog-cli incidents type list
+datadog-cli incidents type show <id>
+datadog-cli incidents type create --name <name> [--description <text>]
+datadog-cli incidents type update <id> [--name <name>] [--description <text>]
+datadog-cli incidents type delete <id> --yes
+datadog-cli incidents service list [--filter <query>]
+datadog-cli incidents service show <id>
+datadog-cli incidents service create --name <name>
+datadog-cli incidents service update <id> --name <name>
+datadog-cli incidents service delete <id> --yes
+datadog-cli incidents team list [--filter <query>]
+datadog-cli incidents team show <id>
+datadog-cli incidents team create --name <name>
+datadog-cli incidents team update <id> --name <name>
+datadog-cli incidents team delete <id> --yes
+```
+
+Incidents list output columns: `ID | TITLE | SEVERITY | STATUS | CREATED | COMMANDER`
+
+Todo list output columns: `ID | CONTENT | ASSIGNEES | COMPLETED`
+
+Integration list output columns: `ID | TYPE | STATUS`
+
+Type list output columns: `ID | NAME | DESCRIPTION | IS_DEFAULT`
+
+Service/Team list output columns: `ID | NAME`
+
+`--severity` accepts: `SEV-0`, `SEV-1`, `SEV-2`, `SEV-3`, `SEV-4`, `SEV-5`
+
+`--status` accepts: `active`, `stable`, `resolved`
+
+`--type` for integrations accepts: `slack`, `jira`
+
+`--metadata` accepts a JSON object with integration-specific fields (e.g. Slack channel info or Jira issue info)
+
+`--completed` for `todo update` marks the todo as completed with the current timestamp; pass `--completed=false` to un-complete
+
+`--yes` is required for destructive operations (delete)
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
