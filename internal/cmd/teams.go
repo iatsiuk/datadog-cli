@@ -224,16 +224,20 @@ func newTeamsUpdateCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 			current := currentTeam.GetAttributes()
 			updName := current.GetName()
 			updHandle := current.GetHandle()
+			updDescription := current.GetDescription()
 			if name != "" {
 				updName = name
 			}
 			if handle != "" {
 				updHandle = handle
 			}
+			if description != "" {
+				updDescription = description
+			}
 
 			attrs := datadogV2.NewTeamUpdateAttributes(updHandle, updName)
-			if description != "" {
-				attrs.SetDescription(description)
+			if updDescription != "" {
+				attrs.SetDescription(updDescription)
 			}
 			data := datadogV2.NewTeamUpdate(*attrs, datadogV2.TEAMTYPE_TEAM)
 			body := datadogV2.NewTeamUpdateRequest(*data)
@@ -431,7 +435,7 @@ func newTeamsRemoveMemberCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 }
 
 func printTeamMembersTable(w io.Writer, data []datadogV2.UserTeam) error {
-	headers := []string{"MEMBERSHIP_ID", "ROLE"}
+	headers := []string{"MEMBERSHIP_ID", "USER_ID", "ROLE"}
 	var rows [][]string
 	for _, m := range data {
 		role := "member"
@@ -439,8 +443,13 @@ func printTeamMembersTable(w io.Writer, data []datadogV2.UserTeam) error {
 		if r, ok := attrs.GetRoleOk(); ok && r != nil {
 			role = string(*r)
 		}
+		rels := m.GetRelationships()
+		userRel := rels.GetUser()
+		userData := userRel.GetData()
+		userID := userData.GetId()
 		rows = append(rows, []string{
 			m.GetId(),
+			userID,
 			role,
 		})
 	}

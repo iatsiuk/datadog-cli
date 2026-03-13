@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
@@ -277,9 +278,15 @@ func buildRolesCreateCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Command, *byte
 func TestRolesCreateTableOutput(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = body
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRoleCreateResponse) //nolint:errcheck
 	}))
@@ -291,8 +298,11 @@ func TestRolesCreateTableOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
 	var reqBody map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+	if err := json.Unmarshal(body, &reqBody); err != nil {
 		t.Fatalf("request body unmarshal: %v", err)
 	}
 	data, _ := reqBody["data"].(map[string]interface{})
@@ -350,9 +360,15 @@ func buildRolesUpdateCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Command, *byte
 func TestRolesUpdateCapturesBody(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = body
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockRoleUpdateResponse) //nolint:errcheck
 	}))
@@ -364,8 +380,11 @@ func TestRolesUpdateCapturesBody(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
 	var reqBody map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+	if err := json.Unmarshal(body, &reqBody); err != nil {
 		t.Fatalf("request body unmarshal: %v", err)
 	}
 	data, _ := reqBody["data"].(map[string]interface{})
@@ -546,9 +565,15 @@ func buildRolesGrantPermissionCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Comma
 func TestRolesGrantPermissionSuccess(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = body
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockPermissionsResponse) //nolint:errcheck
 	}))
@@ -560,8 +585,11 @@ func TestRolesGrantPermissionSuccess(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
 	var reqBody map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+	if err := json.Unmarshal(body, &reqBody); err != nil {
 		t.Fatalf("request body unmarshal: %v", err)
 	}
 	data, _ := reqBody["data"].(map[string]interface{})
@@ -592,9 +620,15 @@ func buildRolesRevokePermissionCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Comm
 func TestRolesRevokePermissionSuccess(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody []byte
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedBody, _ = io.ReadAll(r.Body)
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		capturedBody = body
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockPermissionsResponse) //nolint:errcheck
 	}))
@@ -606,8 +640,11 @@ func TestRolesRevokePermissionSuccess(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
 	var reqBody map[string]interface{}
-	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+	if err := json.Unmarshal(body, &reqBody); err != nil {
 		t.Fatalf("request body unmarshal: %v", err)
 	}
 	data, _ := reqBody["data"].(map[string]interface{})

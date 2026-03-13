@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
@@ -164,9 +165,15 @@ func TestTeamsListJSONOutput(t *testing.T) {
 func TestTeamsListWithFilter(t *testing.T) {
 	t.Parallel()
 
-	var capturedQuery string
+	var (
+		mu            sync.Mutex
+		capturedQuery string
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedQuery = r.URL.Query().Get("filter[keyword]")
+		q := r.URL.Query().Get("filter[keyword]")
+		mu.Lock()
+		capturedQuery = q
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockTeamsListResponse) //nolint:errcheck
 	}))
@@ -178,8 +185,11 @@ func TestTeamsListWithFilter(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if capturedQuery != "platform" {
-		t.Errorf("filter[keyword] = %q, want %q", capturedQuery, "platform")
+	mu.Lock()
+	q := capturedQuery
+	mu.Unlock()
+	if q != "platform" {
+		t.Errorf("filter[keyword] = %q, want %q", q, "platform")
 	}
 }
 
@@ -267,13 +277,20 @@ func TestTeamsShowMissingID(t *testing.T) {
 func TestTeamsCreateSuccess(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody map[string]interface{}
+	var (
+		mu           sync.Mutex
+		capturedBody map[string]interface{}
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, "bad request", http.StatusBadRequest)
 				return
 			}
+			mu.Lock()
+			capturedBody = body
+			mu.Unlock()
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockTeamSingleResponse) //nolint:errcheck
@@ -290,9 +307,12 @@ func TestTeamsCreateSuccess(t *testing.T) {
 		t.Errorf("expected 'Created team' in output, got: %s", buf.String())
 	}
 
-	data, ok := capturedBody["data"].(map[string]interface{})
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
+	data, ok := body["data"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("missing data in request body: %v", capturedBody)
+		t.Fatalf("missing data in request body: %v", body)
 	}
 	attrs, ok := data["attributes"].(map[string]interface{})
 	if !ok {
@@ -335,15 +355,24 @@ func TestTeamsCreateRequiredFlags(t *testing.T) {
 func TestTeamsUpdateSuccess(t *testing.T) {
 	t.Parallel()
 
-	callCount := 0
-	var capturedUpdateBody map[string]interface{}
+	var (
+		mu                 sync.Mutex
+		callCount          int
+		capturedUpdateBody map[string]interface{}
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		callCount++
+		mu.Unlock()
 		if r.Method == http.MethodPatch {
-			if err := json.NewDecoder(r.Body).Decode(&capturedUpdateBody); err != nil {
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, "bad request", http.StatusBadRequest)
 				return
 			}
+			mu.Lock()
+			capturedUpdateBody = body
+			mu.Unlock()
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockTeamSingleResponse) //nolint:errcheck
@@ -360,19 +389,28 @@ func TestTeamsUpdateSuccess(t *testing.T) {
 		t.Errorf("expected 'Updated team' in output, got: %s", buf.String())
 	}
 
-	// should have called GET then PATCH
-	if callCount < 2 {
-		t.Errorf("expected at least 2 API calls (GET + PATCH), got %d", callCount)
+	mu.Lock()
+	count := callCount
+	updateBody := capturedUpdateBody
+	mu.Unlock()
+
+	if count < 2 {
+		t.Errorf("expected at least 2 API calls (GET + PATCH), got %d", count)
 	}
 
-	if capturedUpdateBody != nil {
-		data, ok := capturedUpdateBody["data"].(map[string]interface{})
-		if ok {
-			attrs, ok := data["attributes"].(map[string]interface{})
-			if ok && attrs["name"] != "New Name" {
-				t.Errorf("name in update body = %v, want New Name", attrs["name"])
-			}
-		}
+	if updateBody == nil {
+		t.Fatal("expected PATCH body to be captured, got nil")
+	}
+	data, ok := updateBody["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing data in update body: %v", updateBody)
+	}
+	attrs, ok := data["attributes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing attributes in update body: %v", data)
+	}
+	if got := attrs["name"]; got != "New Name" {
+		t.Errorf("name in update body = %v, want New Name", got)
 	}
 }
 
@@ -414,11 +452,21 @@ const mockTeamMembersResponse = `{
 		"id": "membership-001",
 		"attributes": {
 			"role": "admin"
+		},
+		"relationships": {
+			"user": {
+				"data": {"type": "users", "id": "user-111"}
+			}
 		}
 	}, {
 		"type": "team_memberships",
 		"id": "membership-002",
-		"attributes": {}
+		"attributes": {},
+		"relationships": {
+			"user": {
+				"data": {"type": "users", "id": "user-222"}
+			}
+		}
 	}]
 }`
 
@@ -462,7 +510,7 @@ func TestTeamsMembersTableOutput(t *testing.T) {
 	}
 
 	got := buf.String()
-	for _, want := range []string{"MEMBERSHIP_ID", "ROLE", "membership-001", "admin", "membership-002", "member"} {
+	for _, want := range []string{"MEMBERSHIP_ID", "USER_ID", "ROLE", "membership-001", "user-111", "admin", "membership-002", "user-222", "member"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("output missing %q\ngot: %s", want, got)
 		}
@@ -509,13 +557,20 @@ func TestTeamsMembersMissingID(t *testing.T) {
 func TestTeamsAddMemberSuccess(t *testing.T) {
 	t.Parallel()
 
-	var capturedBody map[string]interface{}
+	var (
+		mu           sync.Mutex
+		capturedBody map[string]interface{}
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, "bad request", http.StatusBadRequest)
 				return
 			}
+			mu.Lock()
+			capturedBody = body
+			mu.Unlock()
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, mockTeamMembershipResponse) //nolint:errcheck
@@ -532,9 +587,12 @@ func TestTeamsAddMemberSuccess(t *testing.T) {
 		t.Errorf("unexpected output: %s", buf.String())
 	}
 
-	data, ok := capturedBody["data"].(map[string]interface{})
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
+	data, ok := body["data"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("missing data in request body: %v", capturedBody)
+		t.Fatalf("missing data in request body: %v", body)
 	}
 	rels, ok := data["relationships"].(map[string]interface{})
 	if !ok {
@@ -550,6 +608,13 @@ func TestTeamsAddMemberSuccess(t *testing.T) {
 	}
 	if got := userData["id"]; got != "user-xyz-456" {
 		t.Errorf("user id = %v, want user-xyz-456", got)
+	}
+	attrs, ok := data["attributes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing attributes in request body: %v", data)
+	}
+	if got := attrs["role"]; got != "admin" {
+		t.Errorf("role = %v, want admin", got)
 	}
 }
 

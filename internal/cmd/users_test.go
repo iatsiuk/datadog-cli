@@ -68,8 +68,10 @@ func TestNewUsersCommand_Subcommands(t *testing.T) {
 	for _, sub := range cmd.Commands() {
 		names[sub.Use] = true
 	}
-	if !names["list"] {
-		t.Error("expected 'list' subcommand")
+	for _, want := range []string{"list", "show", "create", "invite", "update", "disable", "roles", "teams"} {
+		if !names[want] {
+			t.Errorf("expected %q subcommand", want)
+		}
 	}
 }
 

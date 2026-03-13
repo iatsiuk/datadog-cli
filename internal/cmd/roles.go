@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -138,7 +139,7 @@ func newRolesShowCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
 				{"Name", attrs.GetName()},
 				{"Users", userCount},
 				{"Created", createdAt},
-				{"Permissions", fmt.Sprintf("%d: %s", len(perms), joinStrings(perms, ", "))},
+				{"Permissions", fmt.Sprintf("%d: %s", len(perms), strings.Join(perms, ", "))},
 			}
 			w := cmd.OutOrStdout()
 			for _, f := range fields {
@@ -422,17 +423,6 @@ func extractRolePermissionIDs(r datadogV2.Role) []string {
 		ids = append(ids, p.GetId())
 	}
 	return ids
-}
-
-func joinStrings(ss []string, sep string) string {
-	result := ""
-	for i, s := range ss {
-		if i > 0 {
-			result += sep
-		}
-		result += s
-	}
-	return result
 }
 
 func printRolesTable(w io.Writer, data []datadogV2.Role) error {
