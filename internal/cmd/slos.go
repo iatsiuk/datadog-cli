@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -545,18 +546,105 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 	return cmd
 }
 
-func newSLOsDeleteCmd(_ func() (*slosAPI, error)) *cobra.Command {
-	return &cobra.Command{
+func newSLOsDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		id  string
+		yes bool
+	)
+
+	cmd := &cobra.Command{
 		Use:   "delete",
 		Short: "Delete an SLO",
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if !yes {
+				return fmt.Errorf("--yes is required to confirm deletion")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.DeleteSLO(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete SLO: %w", err)
+			}
+
+			deleted := resp.GetData()
+			errs := resp.GetErrors()
+			if len(errs) > 0 {
+				for k, v := range errs {
+					fmt.Fprintf(os.Stderr, "error deleting %s: %s\n", k, v)
+				}
+			}
+			if len(deleted) > 0 {
+				fmt.Printf("deleted: %s\n", strings.Join(deleted, ", "))
+			}
+			return nil
+		},
 	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
 }
 
-func newSLOsCanDeleteCmd(_ func() (*slosAPI, error)) *cobra.Command {
-	return &cobra.Command{
+func newSLOsCanDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var id string
+
+	cmd := &cobra.Command{
 		Use:   "can-delete",
 		Short: "Check if an SLO can be deleted",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.CheckCanDeleteSLO(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("check can delete SLO: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"ID", "STATUS"}
+			var rows [][]string
+
+			if data := resp.GetData(); data.HasOk() {
+				for _, okID := range data.GetOk() {
+					rows = append(rows, []string{okID, "can delete"})
+				}
+			}
+			for errID, errMsg := range resp.GetErrors() {
+				rows = append(rows, []string{errID, "blocked: " + errMsg})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
 	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID (required)")
+	return cmd
 }
 
 func newSLOsCorrectionCmd(_ func() (*slosAPI, error)) *cobra.Command {

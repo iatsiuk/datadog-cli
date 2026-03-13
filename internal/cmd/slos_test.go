@@ -785,6 +785,108 @@ func TestSLOsUpdate_JSONOutput(t *testing.T) {
 	}
 }
 
+func buildSLOsDeleteCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	slos := &cobra.Command{Use: "slos"}
+	slos.AddCommand(newSLOsDeleteCmd(mkAPI))
+	root.AddCommand(slos)
+	return root, buf
+}
+
+func buildSLOsCanDeleteCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	slos := &cobra.Command{Use: "slos"}
+	slos.AddCommand(newSLOsCanDeleteCmd(mkAPI))
+	root.AddCommand(slos)
+	return root, buf
+}
+
+func TestSLOsDelete_Success(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":["abc123"],"errors":{}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSLOsDeleteCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "delete", "--id", "abc123", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+}
+
+func TestSLOsDelete_MissingYes(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsDeleteCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "delete", "--id", "abc123"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --yes not provided")
+	}
+}
+
+func TestSLOsDelete_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsDeleteCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "delete", "--yes"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --id not provided")
+	}
+}
+
+func TestSLOsCanDelete_TableOutput(t *testing.T) {
+	t.Parallel()
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("ids")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"ok":["abc123"]},"errors":{}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCanDeleteCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "can-delete", "--id", "abc123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if gotQuery != "abc123" {
+		t.Errorf("ids query param = %q, want %q", gotQuery, "abc123")
+	}
+	out := buf.String()
+	for _, want := range []string{"abc123", "can delete"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOsCanDelete_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsCanDeleteCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "can-delete"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --id not provided")
+	}
+}
+
 func TestNewSLOsCommand_Subcommands(t *testing.T) {
 	t.Parallel()
 	cmd := NewSLOsCommand()
