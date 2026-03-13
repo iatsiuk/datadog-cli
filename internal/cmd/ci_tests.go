@@ -235,8 +235,8 @@ func newCITestTailCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
 				} else {
-					prevSeen = currSeen
-					currSeen = nextSeen
+					prevSeen = nextSeen
+					currSeen = make(map[string]struct{})
 					since = to.Add(-ingestionOverlap)
 				}
 
