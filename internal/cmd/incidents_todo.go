@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/spf13/cobra"
@@ -236,7 +237,7 @@ func newTodoUpdateCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {
 			}
 			if cmd.Flags().Changed("completed") {
 				if completed {
-					attrs.SetCompleted("true")
+					attrs.SetCompleted(time.Now().UTC().Format(time.RFC3339))
 				} else {
 					attrs.SetCompletedNil()
 				}

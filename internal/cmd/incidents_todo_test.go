@@ -216,6 +216,10 @@ func TestTodoUpdate_TableOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
+	if callCount != 2 {
+		t.Errorf("expected 2 API calls (GET + PATCH), got %d", callCount)
+	}
+
 	out := buf.String()
 	if !strings.Contains(out, "todo-111") {
 		t.Errorf("output missing todo ID\nfull output:\n%s", out)

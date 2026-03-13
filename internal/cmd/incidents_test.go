@@ -121,8 +121,8 @@ func TestIncidentsList_PageSizeFlag(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(capturedURL, "page") {
-		t.Errorf("expected page param in URL, got: %s", capturedURL)
+	if !strings.Contains(capturedURL, "page%5Bsize%5D=5") {
+		t.Errorf("expected page[size]=5 param in URL, got: %s", capturedURL)
 	}
 }
 
