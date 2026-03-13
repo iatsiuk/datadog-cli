@@ -131,13 +131,13 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 7: incidents team subcommands
 
-- [ ] write tests for `incidents team list`: outputs table (id, name)
-- [ ] write tests for `incidents team show <id>`: outputs detail view
-- [ ] write tests for `incidents team create`: parses --name flag
-- [ ] write tests for `incidents team update <id>`: parses --name flag
-- [ ] write tests for `incidents team delete <id>`: requires --yes flag
-- [ ] implement team subcommands in `incidents_team.go`
-- [ ] run tests - must pass before next task
+- [x] write tests for `incidents team list`: outputs table (id, name)
+- [x] write tests for `incidents team show <id>`: outputs detail view
+- [x] write tests for `incidents team create`: parses --name flag
+- [x] write tests for `incidents team update <id>`: parses --name flag
+- [x] write tests for `incidents team delete <id>`: requires --yes flag
+- [x] implement team subcommands in `incidents_team.go`
+- [x] run tests - must pass before next task
 
 ### Task 8: Verify acceptance criteria
 

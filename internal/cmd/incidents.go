@@ -23,6 +23,7 @@ var (
 type incidentsAPI struct {
 	api         *datadogV2.IncidentsApi
 	servicesApi *datadogV2.IncidentServicesApi
+	teamsApi    *datadogV2.IncidentTeamsApi
 	ctx         context.Context
 }
 
@@ -58,10 +59,16 @@ func defaultIncidentsAPI() (*incidentsAPI, error) {
 	ddCfg.SetUnstableOperationEnabled("v2.CreateIncidentService", true)
 	ddCfg.SetUnstableOperationEnabled("v2.UpdateIncidentService", true)
 	ddCfg.SetUnstableOperationEnabled("v2.DeleteIncidentService", true)
+	ddCfg.SetUnstableOperationEnabled("v2.ListIncidentTeams", true)
+	ddCfg.SetUnstableOperationEnabled("v2.GetIncidentTeam", true)
+	ddCfg.SetUnstableOperationEnabled("v2.CreateIncidentTeam", true)
+	ddCfg.SetUnstableOperationEnabled("v2.UpdateIncidentTeam", true)
+	ddCfg.SetUnstableOperationEnabled("v2.DeleteIncidentTeam", true)
 	c, ctx := client.NewWithConfig(ddCfg, cfg)
 	return &incidentsAPI{
 		api:         datadogV2.NewIncidentsApi(c),
 		servicesApi: datadogV2.NewIncidentServicesApi(c),
+		teamsApi:    datadogV2.NewIncidentTeamsApi(c),
 		ctx:         ctx,
 	}, nil
 }
@@ -89,6 +96,7 @@ func NewIncidentsCommand(mkAPI ...func() (*incidentsAPI, error)) *cobra.Command 
 	cmd.AddCommand(newIncidentsIntegrationCmd(mk))
 	cmd.AddCommand(newIncidentsTypeCmd(mk))
 	cmd.AddCommand(newIncidentsServiceCmd(mk))
+	cmd.AddCommand(newIncidentsTeamCmd(mk))
 	return cmd
 }
 
