@@ -95,11 +95,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 8: Roles update/delete with tests
-- [ ] write tests for `users roles update --id <id> --name <name>`
-- [ ] write tests for `users roles delete --id <id> --yes`
-- [ ] implement `newRolesUpdateCmd` -- call `UpdateRole`
-- [ ] implement `newRolesDeleteCmd` -- require `--yes`, call `DeleteRole`
-- [ ] run `make build` -- must pass
+- [x] write tests for `users roles update --id <id> --name <name>`
+- [x] write tests for `users roles delete --id <id> --yes`
+- [x] implement `newRolesUpdateCmd` -- call `UpdateRole`
+- [x] implement `newRolesDeleteCmd` -- require `--yes`, call `DeleteRole`
+- [x] run `make build` -- must pass
 
 ### Task 9: Roles permissions grant/revoke with tests
 - [ ] write tests for `users roles grant-permission --role-id <id> --permission-id <id>` -- success

@@ -37,6 +37,8 @@ func NewRolesCommand() *cobra.Command {
 	cmd.AddCommand(newRolesListCmd(defaultRolesAPI))
 	cmd.AddCommand(newRolesShowCmd(defaultRolesAPI))
 	cmd.AddCommand(newRolesCreateCmd(defaultRolesAPI))
+	cmd.AddCommand(newRolesUpdateCmd(defaultRolesAPI))
+	cmd.AddCommand(newRolesDeleteCmd(defaultRolesAPI))
 	return cmd
 }
 
@@ -193,6 +195,81 @@ func newRolesCreateCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
 
 	cmd.Flags().StringVar(&name, "name", "", "role name")
 	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func newRolesUpdateCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
+	var roleID, name string
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update a role",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewRoleUpdateAttributes()
+			attrs.SetName(name)
+			data := datadogV2.NewRoleUpdateData(*attrs, roleID, datadogV2.ROLESTYPE_ROLES)
+			body := datadogV2.NewRoleUpdateRequest(*data)
+
+			resp, httpResp, err := rapi.api.UpdateRole(rapi.ctx, roleID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update role: %w", err)
+			}
+
+			role := resp.GetData()
+			attrs2 := role.GetAttributes()
+			fmt.Fprintf(cmd.OutOrStdout(), "Updated role: %s (%s)\n", attrs2.GetName(), role.GetId()) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&roleID, "id", "", "role ID")
+	cmd.Flags().StringVar(&name, "name", "", "new role name")
+	_ = cmd.MarkFlagRequired("id")
+	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func newRolesDeleteCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
+	var roleID string
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete a role",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !yes {
+				return fmt.Errorf("pass --yes to confirm deleting role %s", roleID)
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := rapi.api.DeleteRole(rapi.ctx, roleID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete role: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Deleted role: %s\n", roleID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&roleID, "id", "", "role ID")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	_ = cmd.MarkFlagRequired("id")
 	return cmd
 }
 

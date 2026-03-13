@@ -320,3 +320,122 @@ func TestRolesCreateMissingName(t *testing.T) {
 		t.Fatal("expected error for missing --name flag")
 	}
 }
+
+const mockRoleUpdateResponse = `{
+	"data": {
+		"type": "roles",
+		"id": "role-abc-123",
+		"attributes": {
+			"name": "Updated Role",
+			"user_count": 3,
+			"created_at": "2024-01-15T10:30:00.000Z"
+		}
+	}
+}`
+
+func buildRolesUpdateCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	roles := &cobra.Command{Use: "roles"}
+	roles.AddCommand(newRolesUpdateCmd(mkAPI))
+	users.AddCommand(roles)
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestRolesUpdateCapturesBody(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockRoleUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRolesUpdateCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "update", "--id", "role-abc-123", "--name", "Updated Role"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var reqBody map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+		t.Fatalf("request body unmarshal: %v", err)
+	}
+	data, _ := reqBody["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["name"]; got != "Updated Role" {
+		t.Errorf("request name = %v, want Updated Role", got)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "role-abc-123") || !strings.Contains(got, "Updated Role") {
+		t.Errorf("output missing updated role info\ngot: %s", got)
+	}
+}
+
+func TestRolesUpdateMissingID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildRolesUpdateCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "update", "--name", "foo"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for missing --id flag")
+	}
+}
+
+func buildRolesDeleteCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	roles := &cobra.Command{Use: "roles"}
+	roles.AddCommand(newRolesDeleteCmd(mkAPI))
+	users.AddCommand(roles)
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestRolesDeleteSuccess(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildRolesDeleteCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "delete", "--id", "role-abc-123", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "role-abc-123") {
+		t.Errorf("output missing role id\ngot: %s", got)
+	}
+}
+
+func TestRolesDeleteMissingYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildRolesDeleteCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "delete", "--id", "role-abc-123"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --yes not provided")
+	}
+}
