@@ -1030,6 +1030,240 @@ func TestSLOCorrectionShow_MissingID(t *testing.T) {
 	}
 }
 
+const mockSLOCorrectionCreateResponse = `{
+	"data": {
+		"id": "corrNew",
+		"type": "correction",
+		"attributes": {
+			"slo_id": "abc123",
+			"category": "Deployment",
+			"description": "deploy window",
+			"start": 1700000000,
+			"end": 1700003600,
+			"timezone": "UTC"
+		}
+	}
+}`
+
+func TestSLOCorrectionCreate_RequestBody(t *testing.T) {
+	t.Parallel()
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCorrectionCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{
+		"slos", "correction", "create",
+		"--slo-id", "abc123",
+		"--category", "Deployment",
+		"--start", "1700000000",
+		"--end", "1700003600",
+		"--description", "deploy window",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	data, ok := gotBody["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data field missing: %v", gotBody)
+	}
+	attrs, ok := data["attributes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("attributes field missing: %v", data)
+	}
+	if attrs["slo_id"] != "abc123" {
+		t.Errorf("slo_id = %v, want abc123", attrs["slo_id"])
+	}
+	if attrs["category"] != "Deployment" {
+		t.Errorf("category = %v, want Deployment", attrs["category"])
+	}
+	if attrs["description"] != "deploy window" {
+		t.Errorf("description = %v, want deploy window", attrs["description"])
+	}
+
+	out := buf.String()
+	for _, want := range []string{"corrNew", "abc123", "Deployment", "deploy window"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOCorrectionCreate_RequiredFlags(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"missing slo-id", []string{"slos", "correction", "create", "--category", "Deployment", "--start", "1700000000"}},
+		{"missing category", []string{"slos", "correction", "create", "--slo-id", "abc123", "--start", "1700000000"}},
+		{"missing start", []string{"slos", "correction", "create", "--slo-id", "abc123", "--category", "Deployment"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+			root.SetArgs(tc.args)
+			if err := root.Execute(); err == nil {
+				t.Fatalf("expected error for %q", tc.name)
+			}
+		})
+	}
+}
+
+func TestSLOCorrectionCreate_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCorrectionCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{
+		"--json", "slos", "correction", "create",
+		"--slo-id", "abc123",
+		"--category", "Deployment",
+		"--start", "1700000000",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{`"id"`, "corrNew", "Deployment"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+const mockSLOCorrectionUpdateResponse = `{
+	"data": {
+		"id": "corr123",
+		"type": "correction",
+		"attributes": {
+			"slo_id": "abc123",
+			"category": "Deployment",
+			"description": "updated desc",
+			"start": 1700000000,
+			"end": 1700007200,
+			"timezone": "UTC"
+		}
+	}
+}`
+
+func TestSLOCorrectionUpdate_RequestBody(t *testing.T) {
+	t.Parallel()
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCorrectionUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{
+		"slos", "correction", "update",
+		"--id", "corr123",
+		"--category", "Deployment",
+		"--description", "updated desc",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	data, ok := gotBody["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data field missing: %v", gotBody)
+	}
+	attrs, ok := data["attributes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("attributes field missing: %v", data)
+	}
+	if attrs["category"] != "Deployment" {
+		t.Errorf("category = %v, want Deployment", attrs["category"])
+	}
+	if attrs["description"] != "updated desc" {
+		t.Errorf("description = %v, want updated desc", attrs["description"])
+	}
+
+	out := buf.String()
+	for _, want := range []string{"corr123", "Deployment", "updated desc"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOCorrectionUpdate_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "correction", "update", "--category", "Deployment"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for missing --id flag")
+	}
+}
+
+func TestSLOCorrectionDelete_Success(t *testing.T) {
+	t.Parallel()
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, _ := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "correction", "delete", "--id", "corr123", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(gotPath, "corr123") {
+		t.Errorf("path %q does not contain correction ID", gotPath)
+	}
+}
+
+func TestSLOCorrectionDelete_MissingYes(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "correction", "delete", "--id", "corr123"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --yes not provided")
+	}
+}
+
+func TestSLOCorrectionDelete_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "correction", "delete", "--yes"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --id not provided")
+	}
+}
+
 func TestNewSLOsCommand_Subcommands(t *testing.T) {
 	t.Parallel()
 	cmd := NewSLOsCommand()
