@@ -370,8 +370,9 @@ func newSLOsCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 					ids = append(ids, id)
 				}
 				body.SetMonitorIds(ids)
+			default:
+				return fmt.Errorf("--type: unsupported SLO type %q, must be metric or monitor", sloType)
 			}
-
 			sapi, err := mkAPI()
 			if err != nil {
 				return err
@@ -490,6 +491,9 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				slo.SetThresholds(sloThresholds)
 			}
 			if numerator != "" || denominator != "" {
+				if slo.GetType() != datadogV1.SLOTYPE_METRIC {
+					return fmt.Errorf("--numerator/--denominator: only valid for metric SLOs")
+				}
 				q := slo.GetQuery()
 				if numerator != "" {
 					q.SetNumerator(numerator)

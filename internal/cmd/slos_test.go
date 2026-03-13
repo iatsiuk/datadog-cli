@@ -547,6 +547,10 @@ func TestSLOsCreate_RequiredFlags(t *testing.T) {
 			"invalid thresholds json",
 			[]string{"slos", "create", "--name", "X", "--type", "metric", "--thresholds", `not-json`, "--numerator", "n", "--denominator", "d"},
 		},
+		{
+			"unsupported type",
+			[]string{"slos", "create", "--name", "X", "--type", "time_slice", "--thresholds", `[{"timeframe":"30d","target":99.9}]`},
+		},
 	}
 
 	for _, tc := range tests {
@@ -724,6 +728,21 @@ func TestSLOsUpdate_PreservesUnchangedFields(t *testing.T) {
 	tags, ok := updateBody["tags"].([]interface{})
 	if !ok || len(tags) == 0 {
 		t.Errorf("tags not preserved: %v", updateBody["tags"])
+	}
+}
+
+func TestSLOsUpdate_NumeratorOnMonitorSLO(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"id":"abc123","name":"Monitor SLO","type":"monitor","thresholds":[{"timeframe":"30d","target":99.9}],"monitor_ids":[1]}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSLOsUpdateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "update", "--id", "abc123", "--numerator", "sum:requests.success{*}.as_count()"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when setting numerator on monitor SLO")
 	}
 }
 
