@@ -589,6 +589,20 @@ func TestUsersUpdateOnlyChangedFields(t *testing.T) {
 	}
 }
 
+func TestUsersUpdateNoFieldsError(t *testing.T) {
+	t.Parallel()
+
+	root, _ := buildUsersUpdateCmd(nil)
+	root.SetArgs([]string{"users", "update", "--id", "user-abc-123"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when no fields provided, got nil")
+	}
+	if !strings.Contains(err.Error(), "at least one of --name or --email is required") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func buildUsersDisableCmd(mkAPI func() (*usersAPI, error)) (*cobra.Command, *bytes.Buffer) {
 	root := &cobra.Command{Use: "datadog-cli"}
 	root.PersistentFlags().Bool("json", false, "output as JSON")

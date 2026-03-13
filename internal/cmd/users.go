@@ -254,6 +254,10 @@ func newUsersUpdateCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 		Use:   "update",
 		Short: "Update a user",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if name == "" && email == "" {
+				return fmt.Errorf("at least one of --name or --email is required")
+			}
+
 			uapi, err := mkAPI()
 			if err != nil {
 				return err

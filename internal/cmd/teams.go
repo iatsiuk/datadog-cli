@@ -231,7 +231,7 @@ func newTeamsUpdateCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 			if handle != "" {
 				updHandle = handle
 			}
-			if description != "" {
+			if cmd.Flags().Changed("description") {
 				updDescription = description
 			}
 
