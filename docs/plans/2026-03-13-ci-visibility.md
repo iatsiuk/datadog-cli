@@ -80,10 +80,10 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 4: ci pipeline create subcommand
 
-- [ ] write tests for `ci pipeline create`: parses --pipeline-name, --status, --level, --git-branch, --git-sha flags
-- [ ] write tests for `ci pipeline create`: sends correct request structure
-- [ ] implement `ci pipeline create` using `CreateCIAppPipelineEvent()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `ci pipeline create`: parses --pipeline-name, --status, --level, --git-branch, --git-sha flags
+- [x] write tests for `ci pipeline create`: sends correct request structure
+- [x] implement `ci pipeline create` using `CreateCIAppPipelineEvent()`
+- [x] run tests - must pass before next task
 
 ### Task 5: ci test search subcommand
 

@@ -507,3 +507,163 @@ func TestCIPipelineAggregateRequiresCompute(t *testing.T) {
 		t.Error("expected error when --compute is missing")
 	}
 }
+
+func buildCIPipelineCreateCmd(mkAPI func() (*pipelinesAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	ci := &cobra.Command{Use: "ci"}
+	pipeline := &cobra.Command{Use: "pipeline"}
+	pipeline.AddCommand(newCIPipelineCreateCmd(mkAPI))
+	ci.AddCommand(pipeline)
+	root.AddCommand(ci)
+	return root, buf
+}
+
+func TestCIPipelineCreateFlags(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		reqBody = body
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{
+		"ci", "pipeline", "create",
+		"--pipeline-name", "my-pipeline",
+		"--status", "success",
+		"--level", "pipeline",
+		"--git-branch", "main",
+		"--git-sha", "abc123",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+
+	if len(body) == 0 {
+		t.Fatal("no request body sent")
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("invalid request body: %v\n%s", err, body)
+	}
+
+	data, _ := parsed["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatal("request missing data field")
+	}
+	if got := data["type"]; got != "cipipeline_resource_request" {
+		t.Errorf("data.type = %v, want cipipeline_resource_request", got)
+	}
+}
+
+func TestCIPipelineCreateRequestStructure(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		reqBody = body
+		mu.Unlock()
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{
+		"ci", "pipeline", "create",
+		"--pipeline-name", "deploy-prod",
+		"--status", "error",
+		"--git-branch", "feature/x",
+		"--git-sha", "deadbeef",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("invalid request body: %v\n%s", err, body)
+	}
+
+	data, _ := parsed["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatal("request missing data field")
+	}
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if attrs == nil {
+		t.Fatal("data missing attributes field")
+	}
+	resource, _ := attrs["resource"].(map[string]interface{})
+	if resource == nil {
+		t.Fatal("attributes missing resource field")
+	}
+	if got := resource["name"]; got != "deploy-prod" {
+		t.Errorf("resource.name = %v, want deploy-prod", got)
+	}
+	if got := resource["status"]; got != "error" {
+		t.Errorf("resource.status = %v, want error", got)
+	}
+	git, _ := resource["git"].(map[string]interface{})
+	if git == nil {
+		t.Fatal("resource missing git field")
+	}
+	if got := git["sha"]; got != "deadbeef" {
+		t.Errorf("git.sha = %v, want deadbeef", got)
+	}
+}
+
+func TestCIPipelineCreateRequiresPipelineName(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "create", "--status", "success"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --pipeline-name is missing")
+	}
+}
+
+func TestCIPipelineCreateRequiresStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "create", "--pipeline-name", "test"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error when --status is missing")
+	}
+}

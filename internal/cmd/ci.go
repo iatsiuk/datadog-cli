@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/spf13/cobra"
 
@@ -50,6 +51,7 @@ func newCIPipelineCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 	cmd.AddCommand(newCIPipelineSearchCmd(mkAPI))
 	cmd.AddCommand(newCIPipelineTailCmd(mkAPI))
 	cmd.AddCommand(newCIPipelineAggregateCmd(mkAPI))
+	cmd.AddCommand(newCIPipelineCreateCmd(mkAPI))
 	return cmd
 }
 
@@ -402,6 +404,98 @@ func newCIPipelineAggregateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Comma
 	cmd.Flags().StringVar(&toStr, "to", "", "end time, supports date math (default now)")
 	cmd.Flags().StringSliceVar(&groupBy, "group-by", nil, "facets to group by (repeatable)")
 	cmd.Flags().StringVar(&compute, "compute", "", "aggregation function: count, sum, avg, min, max, etc.")
+	return cmd
+}
+
+func newCIPipelineCreateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
+	var (
+		pipelineName string
+		statusStr    string
+		levelStr     string
+		gitBranch    string
+		gitSha       string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a CI pipeline event",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if pipelineName == "" {
+				return fmt.Errorf("--pipeline-name is required")
+			}
+			if statusStr == "" {
+				return fmt.Errorf("--status is required")
+			}
+
+			status, err := datadogV2.NewCIAppPipelineEventPipelineStatusFromValue(statusStr)
+			if err != nil {
+				return fmt.Errorf("--status: %w", err)
+			}
+
+			level := datadogV2.CIAPPPIPELINEEVENTPIPELINELEVEL_PIPELINE
+			if levelStr != "" && levelStr != string(datadogV2.CIAPPPIPELINEEVENTPIPELINELEVEL_PIPELINE) {
+				l, err := datadogV2.NewCIAppPipelineEventPipelineLevelFromValue(levelStr)
+				if err != nil {
+					return fmt.Errorf("--level: %w", err)
+				}
+				level = *l
+			}
+
+			now := time.Now().UTC()
+			uniqueID := fmt.Sprintf("%d", now.UnixNano())
+			pipeline := datadogV2.NewCIAppPipelineEventFinishedPipeline(
+				now, level, pipelineName, false, now, *status, uniqueID, "",
+			)
+
+			if gitBranch != "" || gitSha != "" {
+				sha := gitSha
+				if sha == "" {
+					sha = "unknown"
+				}
+				gitInfo := datadogV2.NewCIAppGitInfo("", "", sha)
+				if gitBranch != "" {
+					gitInfo.Branch = *datadog.NewNullableString(&gitBranch)
+				}
+				pipeline.Git = *datadogV2.NewNullableCIAppGitInfo(gitInfo)
+			}
+
+			pipelineUnion := &datadogV2.CIAppPipelineEventPipeline{
+				CIAppPipelineEventFinishedPipeline: pipeline,
+			}
+			resource := datadogV2.CIAppPipelineEventPipelineAsCIAppCreatePipelineEventRequestAttributesResource(pipelineUnion)
+			attrs := datadogV2.NewCIAppCreatePipelineEventRequestAttributes(resource)
+			dataType := datadogV2.CIAPPCREATEPIPELINEEVENTREQUESTDATATYPE_CIPIPELINE_RESOURCE_REQUEST
+			reqData := datadogV2.CIAppCreatePipelineEventRequestData{
+				Attributes: attrs,
+				Type:       &dataType,
+			}
+			singleOrArray := datadogV2.CIAppCreatePipelineEventRequestDataAsCIAppCreatePipelineEventRequestDataSingleOrArray(&reqData)
+			req := datadogV2.NewCIAppCreatePipelineEventRequest()
+			req.SetData(singleOrArray)
+
+			papi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			_, httpResp, err := papi.api.CreateCIAppPipelineEvent(papi.ctx, *req)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create pipeline event: %w", err)
+			}
+
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Pipeline event created")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&pipelineName, "pipeline-name", "", "pipeline name (required)")
+	cmd.Flags().StringVar(&statusStr, "status", "", "pipeline status: success, error, canceled, skipped, blocked (required)")
+	cmd.Flags().StringVar(&levelStr, "level", "pipeline", "event level")
+	cmd.Flags().StringVar(&gitBranch, "git-branch", "", "git branch")
+	cmd.Flags().StringVar(&gitSha, "git-sha", "", "git commit SHA")
 	return cmd
 }
 
