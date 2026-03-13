@@ -103,10 +103,10 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 7: ci test aggregate subcommand
 
-- [ ] write tests for `ci test aggregate`: parses --query, --from, --to, --group-by, --compute flags
-- [ ] write tests for `ci test aggregate`: formats aggregation results as table
-- [ ] implement `ci test aggregate` using `AggregateCIAppTestEvents()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `ci test aggregate`: parses --query, --from, --to, --group-by, --compute flags
+- [x] write tests for `ci test aggregate`: formats aggregation results as table
+- [x] implement `ci test aggregate` using `AggregateCIAppTestEvents()`
+- [x] run tests - must pass before next task
 
 ### Task 8: Verify acceptance criteria
 
