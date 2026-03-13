@@ -594,6 +594,9 @@ func newSLOsDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			if len(deleted) > 0 {
 				fmt.Fprintf(cmd.OutOrStdout(), "deleted: %s\n", strings.Join(deleted, ", ")) //nolint:errcheck
 			}
+			if len(errs) > 0 {
+				return fmt.Errorf("failed to delete %d SLO(s)", len(errs))
+			}
 			return nil
 		},
 	}
