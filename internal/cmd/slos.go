@@ -368,7 +368,11 @@ func newSLOsCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				body.SetDescription(description)
 			}
 			if tags != "" {
-				body.SetTags(strings.Split(tags, ","))
+				tagParts := strings.Split(tags, ",")
+				for i, p := range tagParts {
+					tagParts[i] = strings.TrimSpace(p)
+				}
+				body.SetTags(tagParts)
 			}
 
 			switch sloTypeVal {
@@ -487,8 +491,16 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			if cmd.Flags().Changed("description") {
 				slo.SetDescription(description)
 			}
-			if tags != "" {
-				slo.SetTags(strings.Split(tags, ","))
+			if cmd.Flags().Changed("tags") {
+				if tags == "" {
+					slo.SetTags([]string{})
+				} else {
+					tagParts := strings.Split(tags, ",")
+					for i, p := range tagParts {
+						tagParts[i] = strings.TrimSpace(p)
+					}
+					slo.SetTags(tagParts)
+				}
 			}
 			if thresholds != "" {
 				sloThresholds, err := parseThresholds(thresholds)

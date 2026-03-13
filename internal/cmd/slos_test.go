@@ -758,6 +758,66 @@ func TestSLOsUpdate_MissingID(t *testing.T) {
 	}
 }
 
+func TestSLOsUpdate_TagsWithSpacesTrimmed(t *testing.T) {
+	t.Parallel()
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockSLOGetForUpdate) //nolint:errcheck
+		} else {
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &gotBody)
+			fmt.Fprint(w, mockSLOUpdateResponse) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	root, _ := buildSLOsUpdateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "update", "--id", "abc123", "--tags", "env:prod, service:api"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	tags, ok := gotBody["tags"].([]interface{})
+	if !ok || len(tags) != 2 {
+		t.Fatalf("tags = %v, want 2 elements", gotBody["tags"])
+	}
+	if tags[1] != "service:api" {
+		t.Errorf("tags[1] = %q, want %q (space should be trimmed)", tags[1], "service:api")
+	}
+}
+
+func TestSLOsUpdate_ClearTags(t *testing.T) {
+	t.Parallel()
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprint(w, mockSLOGetForUpdate) //nolint:errcheck
+		} else {
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &gotBody)
+			fmt.Fprint(w, mockSLOUpdateResponse) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	root, _ := buildSLOsUpdateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "update", "--id", "abc123", "--tags", ""})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	tags, ok := gotBody["tags"].([]interface{})
+	if !ok {
+		t.Fatalf("tags field missing or wrong type: %v", gotBody["tags"])
+	}
+	if len(tags) != 0 {
+		t.Errorf("tags = %v, want empty slice when --tags \"\" is passed", tags)
+	}
+}
+
 func TestSLOsUpdate_JSONOutput(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
