@@ -62,12 +62,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 4: Users create/invite with tests
-- [ ] write tests for `users create --email <email> --name <name>` -- capture request body
-- [ ] write tests for `users create` -- required flags validation (email)
-- [ ] write tests for `users invite --email <email>` -- send invitation
-- [ ] implement `newUsersCreateCmd` -- call `CreateUser` with email, name, optional role
-- [ ] implement `newUsersInviteCmd` -- call `SendInvitations`
-- [ ] run `make build` -- must pass
+- [x] write tests for `users create --email <email> --name <name>` -- capture request body
+- [x] write tests for `users create` -- required flags validation (email)
+- [x] write tests for `users invite --email <email>` -- send invitation
+- [x] implement `newUsersCreateCmd` -- call `CreateUser` with email, name, optional role
+- [x] implement `newUsersInviteCmd` -- call `SendInvitations`
+- [x] run `make build` -- must pass
 
 ### Task 5: Users update/disable with tests
 - [ ] write tests for `users update --id <id> --name <name>` -- capture request body

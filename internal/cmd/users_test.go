@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -327,6 +328,161 @@ func TestUsersShowMissingID(t *testing.T) {
 
 	root, _ := buildUsersShowCmd(newTestUsersAPI(srv))
 	root.SetArgs([]string{"users", "show"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --id flag is missing")
+	}
+}
+
+func buildUsersCreateCmd(mkAPI func() (*usersAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	users.AddCommand(newUsersCreateCmd(mkAPI))
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestUsersCreateCapturesRequestBody(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body) //nolint:errcheck
+			mu.Lock()
+			reqBody = body
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildUsersCreateCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "create", "--email", "bob@example.com", "--name", "Bob"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+	if body == nil {
+		t.Fatal("no request body captured")
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("JSON unmarshal: %v", err)
+	}
+	data, _ := parsed["data"].(map[string]interface{})
+	attrs, _ := data["attributes"].(map[string]interface{})
+	if got := attrs["email"]; got != "bob@example.com" {
+		t.Errorf("email = %v, want bob@example.com", got)
+	}
+	if got := attrs["name"]; got != "Bob" {
+		t.Errorf("name = %v, want Bob", got)
+	}
+}
+
+func TestUsersCreateRequiredEmailFlag(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildUsersCreateCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "create", "--name", "Bob"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --email flag is missing")
+	}
+}
+
+func buildUsersInviteCmd(mkAPI func() (*usersAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	users.AddCommand(newUsersInviteCmd(mkAPI))
+	root.AddCommand(users)
+	return root, buf
+}
+
+const mockUserInviteResponse = `{
+	"data": [{
+		"type": "user_invitations",
+		"id": "invite-uuid-123"
+	}]
+}`
+
+func TestUsersInviteCapturesRequestBody(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		reqBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body) //nolint:errcheck
+			mu.Lock()
+			reqBody = body
+			mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserInviteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersInviteCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "invite", "--id", "user-abc-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mu.Lock()
+	body := reqBody
+	mu.Unlock()
+	if body == nil {
+		t.Fatal("no request body captured")
+	}
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("JSON unmarshal: %v", err)
+	}
+	dataArr, _ := parsed["data"].([]interface{})
+	if len(dataArr) != 1 {
+		t.Fatalf("expected 1 invitation in data, got %d", len(dataArr))
+	}
+
+	if !strings.Contains(buf.String(), "invite-uuid-123") {
+		t.Errorf("output missing invitation ID, got: %s", buf.String())
+	}
+}
+
+func TestUsersInviteMissingID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserInviteResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildUsersInviteCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "invite"})
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("expected error when --id flag is missing")

@@ -37,6 +37,8 @@ func NewUsersCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newUsersListCmd(defaultUsersAPI))
 	cmd.AddCommand(newUsersShowCmd(defaultUsersAPI))
+	cmd.AddCommand(newUsersCreateCmd(defaultUsersAPI))
+	cmd.AddCommand(newUsersInviteCmd(defaultUsersAPI))
 	return cmd
 }
 
@@ -145,6 +147,98 @@ func newUsersShowCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&userID, "id", "", "user ID")
+	_ = cmd.MarkFlagRequired("id")
+	return cmd
+}
+
+func newUsersCreateCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
+	var email, name, title string
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create a new user",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			uapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewUserCreateAttributes(email)
+			if name != "" {
+				attrs.SetName(name)
+			}
+			if title != "" {
+				attrs.SetTitle(title)
+			}
+			data := datadogV2.NewUserCreateData(*attrs, datadogV2.USERSTYPE_USERS)
+			body := datadogV2.NewUserCreateRequest(*data)
+
+			resp, httpResp, err := uapi.api.CreateUser(uapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create user: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			user := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), user)
+			}
+
+			attrs2 := user.GetAttributes()
+			fmt.Fprintf(cmd.OutOrStdout(), "Created user: %s (%s)\n", attrs2.GetEmail(), user.GetId()) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&email, "email", "", "user email address")
+	cmd.Flags().StringVar(&name, "name", "", "user display name")
+	cmd.Flags().StringVar(&title, "title", "", "user title")
+	_ = cmd.MarkFlagRequired("email")
+	return cmd
+}
+
+func newUsersInviteCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
+	var userID string
+
+	cmd := &cobra.Command{
+		Use:   "invite",
+		Short: "Send invitation email to a user",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			uapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			userData := datadogV2.NewRelationshipToUserData(userID, datadogV2.USERSTYPE_USERS)
+			rel := datadogV2.NewRelationshipToUser(*userData)
+			invRel := datadogV2.NewUserInvitationRelationships(*rel)
+			invData := datadogV2.NewUserInvitationData(*invRel, datadogV2.USERINVITATIONSTYPE_USER_INVITATIONS)
+			body := datadogV2.NewUserInvitationsRequest([]datadogV2.UserInvitationData{*invData})
+
+			resp, httpResp, err := uapi.api.SendInvitations(uapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("send invitations: %w", err)
+			}
+
+			w := cmd.OutOrStdout()
+			for _, inv := range resp.GetData() {
+				fmt.Fprintf(w, "Invitation sent: %s\n", inv.GetId()) //nolint:errcheck
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&userID, "id", "", "user ID to invite")
 	_ = cmd.MarkFlagRequired("id")
 	return cmd
 }
