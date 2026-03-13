@@ -234,3 +234,101 @@ func TestUsersListEmptyResultJSON(t *testing.T) {
 		t.Errorf("expected empty array, got %d items", len(result))
 	}
 }
+
+const mockUserShowResponse = `{
+	"data": {
+		"type": "users",
+		"id": "user-abc-123",
+		"attributes": {
+			"email": "alice@example.com",
+			"name": "Alice Smith",
+			"handle": "alice.smith",
+			"status": "Active",
+			"title": "Engineer",
+			"mfa_enabled": false,
+			"created_at": "2024-01-15T10:30:00.000Z"
+		},
+		"relationships": {
+			"roles": {
+				"data": [{"type": "roles", "id": "role-xyz"}]
+			}
+		}
+	}
+}`
+
+func buildUsersShowCmd(mkAPI func() (*usersAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	users.AddCommand(newUsersShowCmd(mkAPI))
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestUsersShowTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersShowCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "show", "--id", "user-abc-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got := buf.String()
+	checks := []string{"user-abc-123", "alice@example.com", "Alice Smith", "alice.smith", "Active", "Engineer", "role-xyz"}
+	for _, want := range checks {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot: %s", want, got)
+		}
+	}
+}
+
+func TestUsersShowJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildUsersShowCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"--json", "users", "show", "--id", "user-abc-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if got := result["id"]; got != "user-abc-123" {
+		t.Errorf("id = %v, want user-abc-123", got)
+	}
+}
+
+func TestUsersShowMissingID(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockUserShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildUsersShowCmd(newTestUsersAPI(srv))
+	root.SetArgs([]string{"users", "show"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error when --id flag is missing")
+	}
+}

@@ -36,6 +36,7 @@ func NewUsersCommand() *cobra.Command {
 		Short: "Manage Datadog users, roles, and teams",
 	}
 	cmd.AddCommand(newUsersListCmd(defaultUsersAPI))
+	cmd.AddCommand(newUsersShowCmd(defaultUsersAPI))
 	return cmd
 }
 
@@ -82,6 +83,69 @@ func newUsersListCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&filter, "filter", "", "filter users by email or name")
+	return cmd
+}
+
+func newUsersShowCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
+	var userID string
+
+	cmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show user details",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			uapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := uapi.api.GetUser(uapi.ctx, userID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get user: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			user := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), user)
+			}
+
+			attrs := user.GetAttributes()
+			createdAt := ""
+			if t := attrs.CreatedAt; t != nil {
+				createdAt = t.UTC().Format(time.RFC3339)
+			}
+			roles := extractUserRoleIDs(user)
+
+			fields := []struct{ k, v string }{
+				{"ID", user.GetId()},
+				{"Email", attrs.GetEmail()},
+				{"Name", attrs.GetName()},
+				{"Handle", attrs.GetHandle()},
+				{"Status", attrs.GetStatus()},
+				{"Title", attrs.GetTitle()},
+				{"Roles", strings.Join(roles, ", ")},
+				{"Created", createdAt},
+			}
+			w := cmd.OutOrStdout()
+			for _, f := range fields {
+				if f.v == "" {
+					continue
+				}
+				fmt.Fprintf(w, "%-10s %s\n", f.k+":", f.v) //nolint:errcheck
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&userID, "id", "", "user ID")
+	_ = cmd.MarkFlagRequired("id")
 	return cmd
 }
 

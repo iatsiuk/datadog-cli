@@ -55,11 +55,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 3: Users show with tests
-- [ ] write tests for `users show --id <id>` -- full user details including orgs and permissions
-- [ ] write tests for `users show` -- JSON output
-- [ ] write tests for `users show` -- missing required `--id` flag
-- [ ] implement `newUsersShowCmd` -- call `GetUser`, display details
-- [ ] run `make build` -- must pass
+- [x] write tests for `users show --id <id>` -- full user details including orgs and permissions
+- [x] write tests for `users show` -- JSON output
+- [x] write tests for `users show` -- missing required `--id` flag
+- [x] implement `newUsersShowCmd` -- call `GetUser`, display details
+- [x] run `make build` -- must pass
 
 ### Task 4: Users create/invite with tests
 - [ ] write tests for `users create --email <email> --name <name>` -- capture request body
