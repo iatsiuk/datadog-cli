@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -270,10 +271,16 @@ func newSLOsHistoryCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				{"SLI", sliValue},
 				{"Type", string(data.GetType())},
 			}
-			for tf, budget := range overall.GetErrorBudgetRemaining() {
+			errorBudget := overall.GetErrorBudgetRemaining()
+			tfs := make([]string, 0, len(errorBudget))
+			for tf := range errorBudget {
+				tfs = append(tfs, tf)
+			}
+			sort.Strings(tfs)
+			for _, tf := range tfs {
 				rows = append(rows, []string{
 					"ERROR BUDGET (" + tf + ")",
-					strconv.FormatFloat(budget, 'f', 4, 64) + "%",
+					strconv.FormatFloat(errorBudget[tf], 'f', 4, 64) + "%",
 				})
 			}
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
@@ -575,8 +582,13 @@ func newSLOsDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			deleted := resp.GetData()
 			errs := resp.GetErrors()
 			if len(errs) > 0 {
-				for k, v := range errs {
-					fmt.Fprintf(cmd.ErrOrStderr(), "error deleting %s: %s\n", k, v) //nolint:errcheck
+				errKeys := make([]string, 0, len(errs))
+				for k := range errs {
+					errKeys = append(errKeys, k)
+				}
+				sort.Strings(errKeys)
+				for _, k := range errKeys {
+					fmt.Fprintf(cmd.ErrOrStderr(), "error deleting %s: %s\n", k, errs[k]) //nolint:errcheck
 				}
 			}
 			if len(deleted) > 0 {
@@ -632,8 +644,14 @@ func newSLOsCanDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 					rows = append(rows, []string{okID, "can delete"})
 				}
 			}
-			for errID, errMsg := range resp.GetErrors() {
-				rows = append(rows, []string{errID, "blocked: " + errMsg})
+			canDeleteErrs := resp.GetErrors()
+			errIDs := make([]string, 0, len(canDeleteErrs))
+			for errID := range canDeleteErrs {
+				errIDs = append(errIDs, errID)
+			}
+			sort.Strings(errIDs)
+			for _, errID := range errIDs {
+				rows = append(rows, []string{errID, "blocked: " + canDeleteErrs[errID]})
 			}
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
@@ -780,13 +798,18 @@ func newSLOCorrectionCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				return fmt.Errorf("--start is required")
 			}
 
+			cat, err := datadogV1.NewSLOCorrectionCategoryFromValue(category)
+			if err != nil {
+				return fmt.Errorf("--category: %w", err)
+			}
+
 			startTs, err := parseUnixOrRelative(startStr)
 			if err != nil {
 				return fmt.Errorf("--start: %w", err)
 			}
 
 			attrs := datadogV1.NewSLOCorrectionCreateRequestAttributes(
-				datadogV1.SLOCorrectionCategory(category),
+				*cat,
 				sloID,
 				startTs,
 			)
@@ -864,7 +887,11 @@ func newSLOCorrectionUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 
 			attrs := datadogV1.NewSLOCorrectionUpdateRequestAttributes()
 			if category != "" {
-				attrs.SetCategory(datadogV1.SLOCorrectionCategory(category))
+				cat, err := datadogV1.NewSLOCorrectionCategoryFromValue(category)
+				if err != nil {
+					return fmt.Errorf("--category: %w", err)
+				}
+				attrs.SetCategory(*cat)
 			}
 			if startStr != "" {
 				startTs, err := parseUnixOrRelative(startStr)
