@@ -37,6 +37,29 @@ func defaultSLOsAPI() (*slosAPI, error) {
 	}, nil
 }
 
+func parseThresholds(raw string) ([]datadogV1.SLOThreshold, error) {
+	var rawThresholds []struct {
+		Timeframe string   `json:"timeframe"`
+		Target    float64  `json:"target"`
+		Warning   *float64 `json:"warning,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(raw), &rawThresholds); err != nil {
+		return nil, fmt.Errorf("--thresholds: %w", err)
+	}
+	if len(rawThresholds) == 0 {
+		return nil, fmt.Errorf("--thresholds must not be empty")
+	}
+	result := make([]datadogV1.SLOThreshold, len(rawThresholds))
+	for i, t := range rawThresholds {
+		th := datadogV1.NewSLOThreshold(t.Target, datadogV1.SLOTimeframe(t.Timeframe))
+		if t.Warning != nil {
+			th.SetWarning(*t.Warning)
+		}
+		result[i] = *th
+	}
+	return result, nil
+}
+
 func sloTableRows(slos []datadogV1.ServiceLevelObjective) ([]string, [][]string) {
 	headers := []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "TAGS"}
 	var rows [][]string
@@ -206,6 +229,21 @@ func newSLOsShowCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				{"Tags", strings.Join(data.GetTags(), ", ")},
 				{"Thresholds", strings.Join(thresholdParts, ", ")},
 			}
+			switch data.GetType() {
+			case datadogV1.SLOTYPE_METRIC:
+				q := data.GetQuery()
+				rows = append(rows,
+					[]string{"Numerator", q.GetNumerator()},
+					[]string{"Denominator", q.GetDenominator()},
+				)
+			case datadogV1.SLOTYPE_MONITOR:
+				ids := data.GetMonitorIds()
+				idStrs := make([]string, len(ids))
+				for i, id := range ids {
+					idStrs[i] = strconv.FormatInt(id, 10)
+				}
+				rows = append(rows, []string{"Monitor IDs", strings.Join(idStrs, ", ")})
+			}
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
 		},
 	}
@@ -319,25 +357,9 @@ func newSLOsCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				return fmt.Errorf("--thresholds is required")
 			}
 
-			var rawThresholds []struct {
-				Timeframe string   `json:"timeframe"`
-				Target    float64  `json:"target"`
-				Warning   *float64 `json:"warning,omitempty"`
-			}
-			if err := json.Unmarshal([]byte(thresholds), &rawThresholds); err != nil {
-				return fmt.Errorf("--thresholds: %w", err)
-			}
-			if len(rawThresholds) == 0 {
-				return fmt.Errorf("--thresholds must not be empty")
-			}
-
-			sloThresholds := make([]datadogV1.SLOThreshold, len(rawThresholds))
-			for i, t := range rawThresholds {
-				th := datadogV1.NewSLOThreshold(t.Target, datadogV1.SLOTimeframe(t.Timeframe))
-				if t.Warning != nil {
-					th.SetWarning(*t.Warning)
-				}
-				sloThresholds[i] = *th
+			sloThresholds, err := parseThresholds(thresholds)
+			if err != nil {
+				return err
 			}
 
 			sloTypeVal := datadogV1.SLOType(sloType)
@@ -469,24 +491,9 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				slo.SetTags(strings.Split(tags, ","))
 			}
 			if thresholds != "" {
-				var rawThresholds []struct {
-					Timeframe string   `json:"timeframe"`
-					Target    float64  `json:"target"`
-					Warning   *float64 `json:"warning,omitempty"`
-				}
-				if err := json.Unmarshal([]byte(thresholds), &rawThresholds); err != nil {
-					return fmt.Errorf("--thresholds: %w", err)
-				}
-				if len(rawThresholds) == 0 {
-					return fmt.Errorf("--thresholds must not be empty")
-				}
-				sloThresholds := make([]datadogV1.SLOThreshold, len(rawThresholds))
-				for i, t := range rawThresholds {
-					th := datadogV1.NewSLOThreshold(t.Target, datadogV1.SLOTimeframe(t.Timeframe))
-					if t.Warning != nil {
-						th.SetWarning(*t.Warning)
-					}
-					sloThresholds[i] = *th
+				sloThresholds, err := parseThresholds(thresholds)
+				if err != nil {
+					return err
 				}
 				slo.SetThresholds(sloThresholds)
 			}
@@ -917,7 +924,7 @@ func newSLOCorrectionUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			if cmd.Flags().Changed("description") {
 				attrs.SetDescription(description)
 			}
-			if timezone != "" {
+			if cmd.Flags().Changed("timezone") {
 				attrs.SetTimezone(timezone)
 			}
 
