@@ -139,11 +139,13 @@ func newRolesShowCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
 				{"Name", attrs.GetName()},
 				{"Users", userCount},
 				{"Created", createdAt},
-				{"Permissions", fmt.Sprintf("%d: %s", len(perms), strings.Join(perms, ", "))},
+			}
+			if len(perms) > 0 {
+				fields = append(fields, struct{ k, v string }{"Permissions", fmt.Sprintf("%d: %s", len(perms), strings.Join(perms, ", "))})
 			}
 			w := cmd.OutOrStdout()
 			for _, f := range fields {
-				if f.v == "" || f.v == "0: " {
+				if f.v == "" {
 					continue
 				}
 				fmt.Fprintf(w, "%-12s %s\n", f.k+":", f.v) //nolint:errcheck
