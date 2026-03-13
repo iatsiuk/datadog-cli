@@ -50,7 +50,9 @@ func printIncidentServiceDetail(cmd *cobra.Command, d datadogV2.IncidentServiceR
 }
 
 func newIncidentServiceListCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {
-	return &cobra.Command{
+	var filter string
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List incident services",
 		Args:  cobra.NoArgs,
@@ -60,7 +62,12 @@ func newIncidentServiceListCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Comma
 				return err
 			}
 
-			resp, httpResp, err := iapi.servicesApi.ListIncidentServices(iapi.ctx) //nolint:staticcheck
+			opts := datadogV2.NewListIncidentServicesOptionalParameters()
+			if cmd.Flags().Changed("filter") {
+				opts = opts.WithFilter(filter)
+			}
+
+			resp, httpResp, err := iapi.servicesApi.ListIncidentServices(iapi.ctx, *opts) //nolint:staticcheck
 			if httpResp != nil {
 				_ = httpResp.Body.Close()
 			}
@@ -86,6 +93,9 @@ func newIncidentServiceListCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Comma
 			return output.PrintTable(cmd.OutOrStdout(), headers, incidentServiceTableRows(items))
 		},
 	}
+
+	cmd.Flags().StringVar(&filter, "filter", "", "filter by name")
+	return cmd
 }
 
 func newIncidentServiceShowCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {

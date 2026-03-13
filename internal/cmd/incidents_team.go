@@ -50,7 +50,9 @@ func printIncidentTeamDetail(cmd *cobra.Command, d datadogV2.IncidentTeamRespons
 }
 
 func newIncidentTeamListCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {
-	return &cobra.Command{
+	var filter string
+
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List incident teams",
 		Args:  cobra.NoArgs,
@@ -60,7 +62,12 @@ func newIncidentTeamListCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command 
 				return err
 			}
 
-			resp, httpResp, err := iapi.teamsApi.ListIncidentTeams(iapi.ctx) //nolint:staticcheck
+			opts := datadogV2.NewListIncidentTeamsOptionalParameters()
+			if cmd.Flags().Changed("filter") {
+				opts = opts.WithFilter(filter)
+			}
+
+			resp, httpResp, err := iapi.teamsApi.ListIncidentTeams(iapi.ctx, *opts) //nolint:staticcheck
 			if httpResp != nil {
 				_ = httpResp.Body.Close()
 			}
@@ -86,6 +93,9 @@ func newIncidentTeamListCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command 
 			return output.PrintTable(cmd.OutOrStdout(), headers, incidentTeamTableRows(items))
 		},
 	}
+
+	cmd.Flags().StringVar(&filter, "filter", "", "filter by name")
+	return cmd
 }
 
 func newIncidentTeamShowCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {

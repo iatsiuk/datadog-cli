@@ -90,6 +90,27 @@ func TestIncidentServiceList_TableOutput(t *testing.T) {
 	}
 }
 
+func TestIncidentServiceList_Filter(t *testing.T) {
+	t.Parallel()
+	var gotFilter string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotFilter = r.URL.Query().Get("filter")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockIncidentServiceListResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildIncidentsCmd(newTestIncidentsServiceAPI(srv))
+	root.SetArgs([]string{"incidents", "service", "list", "--filter", "Payments"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if gotFilter != "Payments" {
+		t.Errorf("expected filter %q, got %q", "Payments", gotFilter)
+	}
+}
+
 func TestIncidentServiceList_JSONOutput(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
