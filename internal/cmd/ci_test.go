@@ -225,6 +225,92 @@ func TestCIPipelineSearchJSONOutput(t *testing.T) {
 	}
 }
 
+func buildCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	ci := &cobra.Command{Use: "ci"}
+	pipeline := &cobra.Command{Use: "pipeline"}
+	pipeline.AddCommand(newCIPipelineTailCmd(mkAPI))
+	ci.AddCommand(pipeline)
+	root.AddCommand(ci)
+	return root, buf
+}
+
+func TestCIPipelineTailFlagQuery(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedReqs []*http.Request
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReqs = append(capturedReqs, r)
+		callCount++
+		if callCount >= 2 {
+			cancel()
+		}
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineTailCmd(newTestPipelinesAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"ci", "pipeline", "tail", "--query", "ci.status:success"})
+	_ = root.Execute()
+
+	mu.Lock()
+	reqs := capturedReqs
+	mu.Unlock()
+	if len(reqs) == 0 {
+		t.Fatal("no requests made to mock server")
+	}
+	if got := reqs[0].URL.Query().Get("filter[query]"); got != "ci.status:success" {
+		t.Errorf("filter[query] = %q, want %q", got, "ci.status:success")
+	}
+}
+
+func TestCIPipelineTailPollsAPIAndPrintsNewEvents(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var mu sync.Mutex
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n == 1 {
+			fmt.Fprint(w, mockPipelineEventsResponse) //nolint:errcheck
+		} else {
+			cancel()
+			fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	root, buf := buildCIPipelineTailCmd(newTestPipelinesAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"ci", "pipeline", "tail"})
+	_ = root.Execute()
+
+	out := buf.String()
+	for _, want := range []string{"build-and-test", "success", "main"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestCIPipelineSearchDefaultFrom(t *testing.T) {
 	t.Parallel()
 

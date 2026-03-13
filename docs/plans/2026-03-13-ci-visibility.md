@@ -65,10 +65,10 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 2: ci pipeline tail subcommand
 
-- [ ] write tests for `ci pipeline tail`: parses --query flag
-- [ ] write tests for `ci pipeline tail`: polls API and prints new pipeline events
-- [ ] implement `ci pipeline tail` using `ListCIAppPipelineEvents()` in a poll loop
-- [ ] run tests - must pass before next task
+- [x] write tests for `ci pipeline tail`: parses --query flag
+- [x] write tests for `ci pipeline tail`: polls API and prints new pipeline events
+- [x] implement `ci pipeline tail` using `ListCIAppPipelineEvents()` in a poll loop
+- [x] run tests - must pass before next task
 
 ### Task 3: ci pipeline aggregate subcommand
 

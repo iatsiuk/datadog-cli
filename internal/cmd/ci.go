@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/config"
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
+
+const ciTailPollInterval = 5 * time.Second
 
 type pipelinesAPI struct {
 	api *datadogV2.CIVisibilityPipelinesApi
@@ -43,6 +46,7 @@ func newCIPipelineCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 		Short: "CI pipeline events",
 	}
 	cmd.AddCommand(newCIPipelineSearchCmd(mkAPI))
+	cmd.AddCommand(newCIPipelineTailCmd(mkAPI))
 	return cmd
 }
 
@@ -146,6 +150,120 @@ func newCIPipelineSearchCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command 
 	cmd.Flags().StringVar(&toStr, "to", "now", "end time, e.g. now")
 	cmd.Flags().IntVar(&limit, "limit", 50, "max number of events to return")
 	cmd.Flags().StringVar(&sortStr, "sort", "", "sort order: timestamp or -timestamp")
+	return cmd
+}
+
+func newCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
+	var query string
+
+	cmd := &cobra.Command{
+		Use:   "tail",
+		Short: "Tail CI pipeline events in real time",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			papi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			const ingestionOverlap = 10 * time.Second
+			since := time.Now()
+			var prevSeen map[string]struct{}
+			currSeen := map[string]struct{}{}
+
+			for {
+				to := time.Now()
+				baseOpts := datadogV2.NewListCIAppPipelineEventsOptionalParameters().
+					WithFilterFrom(since.UTC()).
+					WithFilterTo(to.UTC()).
+					WithPageLimit(100)
+				if query != "" {
+					baseOpts = baseOpts.WithFilterQuery(query)
+				}
+
+				nextSeen := map[string]struct{}{}
+				opts := *baseOpts
+				apiErr := func() error {
+					for {
+						resp, httpResp, innerErr := papi.api.ListCIAppPipelineEvents(papi.ctx, opts)
+						if httpResp != nil {
+							_ = httpResp.Body.Close()
+						}
+						if innerErr != nil {
+							return innerErr
+						}
+						for _, event := range resp.GetData() {
+							id := event.GetId()
+							if id == "" {
+								continue
+							}
+							nextSeen[id] = struct{}{}
+							if _, inPrev := prevSeen[id]; inPrev {
+								continue
+							}
+							if _, inCurr := currSeen[id]; inCurr {
+								continue
+							}
+							if asJSON {
+								_ = output.PrintJSON(cmd.OutOrStdout(), event)
+							} else {
+								eventAttrs := event.GetAttributes()
+								attrs := eventAttrs.GetAttributes()
+								ts := strAttr(attrs, "@timestamp")
+								name := strAttr(attrs, "ci.pipeline.name")
+								status := strAttr(attrs, "ci.status")
+								branch := strAttr(attrs, "git.branch")
+								duration := ""
+								if d, ok := attrs["duration"]; ok {
+									switch v := d.(type) {
+									case float64:
+										duration = (time.Duration(int64(v)) * time.Nanosecond).String()
+									case int64:
+										duration = (time.Duration(v) * time.Nanosecond).String()
+									}
+								}
+								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n",
+									ts, name, status, duration, branch)
+							}
+						}
+						cursor := ""
+						if resp.Meta != nil && resp.Meta.Page != nil {
+							cursor = resp.Meta.Page.GetAfter()
+						}
+						if cursor == "" {
+							break
+						}
+						opts = *baseOpts
+						opts.PageCursor = &cursor
+					}
+					return nil
+				}()
+
+				if apiErr != nil {
+					if errors.Is(apiErr, context.Canceled) || errors.Is(apiErr, context.DeadlineExceeded) {
+						return nil
+					}
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
+				} else {
+					prevSeen = currSeen
+					currSeen = nextSeen
+					since = to.Add(-ingestionOverlap)
+				}
+
+				select {
+				case <-papi.ctx.Done():
+					return nil
+				case <-time.After(ciTailPollInterval):
+				}
+			}
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "pipeline event search query")
 	return cmd
 }
 
