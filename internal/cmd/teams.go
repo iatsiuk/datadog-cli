@@ -244,15 +244,12 @@ func newTeamsUpdateCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 			if handle != "" {
 				updHandle = handle
 			}
-			descChanged := cmd.Flags().Changed("description")
-			if descChanged {
+			if cmd.Flags().Changed("description") {
 				updDescription = description
 			}
 
 			attrs := datadogV2.NewTeamUpdateAttributes(updHandle, updName)
-			if descChanged {
-				attrs.SetDescription(updDescription)
-			}
+			attrs.SetDescription(updDescription)
 			data := datadogV2.NewTeamUpdate(*attrs, datadogV2.TEAMTYPE_TEAM)
 			body := datadogV2.NewTeamUpdateRequest(*data)
 

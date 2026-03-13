@@ -290,7 +290,16 @@ func newUsersUpdateCmd(mkAPI func() (*usersAPI, error)) *cobra.Command {
 				return fmt.Errorf("update user: %w", err)
 			}
 
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
 			user := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), user)
+			}
+
 			attrs2 := user.GetAttributes()
 			fmt.Fprintf(cmd.OutOrStdout(), "Updated user: %s (%s)\n", attrs2.GetEmail(), user.GetId()) //nolint:errcheck
 			return nil
