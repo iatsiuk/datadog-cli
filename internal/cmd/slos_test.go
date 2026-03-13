@@ -1038,6 +1038,28 @@ func TestSLOCorrectionShow_TableOutput(t *testing.T) {
 	}
 }
 
+func TestSLOCorrectionShow_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCorrectionShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCorrectionCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"--json", "slos", "correction", "show", "--id", "corr123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{`"id"`, "corr123", "Scheduled Maintenance"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
 func TestSLOCorrectionShow_MissingID(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(nil)

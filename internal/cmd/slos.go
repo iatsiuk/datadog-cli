@@ -511,6 +511,9 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 				slo.SetQuery(q)
 			}
 			if monitorIDs != "" {
+				if slo.GetType() != datadogV1.SLOTYPE_MONITOR {
+					return fmt.Errorf("--monitor-ids: only valid for monitor SLOs")
+				}
 				parts := strings.Split(monitorIDs, ",")
 				ids := make([]int64, 0, len(parts))
 				for _, p := range parts {
