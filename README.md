@@ -331,6 +331,37 @@ Policy list output columns: `ID | POLICY_TYPE | TAG_KEY | TAG_KEY_REQUIRED | VAL
 `--start` / `--end` for downtimes accept RFC3339 timestamps (e.g. `2026-03-13T10:00:00Z`)
 `--priority` accepts 1 (highest) to 5 (lowest)
 
+### slos
+
+Manage Datadog Service Level Objectives (SLOs) and corrections.
+
+```
+datadog-cli slos list [--query <query>] [--tags <tags>]
+datadog-cli slos show --id <id>
+datadog-cli slos history --id <id> --from <time> --to <time>
+datadog-cli slos create --name <name> --type <metric|monitor> --thresholds <json> [--description <text>] [--tags <tag,...>] [--numerator <query> --denominator <query>] [--monitor-ids <ids>]
+datadog-cli slos update --id <id> [--name <name>] [--description <text>] [--tags <tag,...>] [--thresholds <json>] [--numerator <query>] [--denominator <query>] [--monitor-ids <ids>]
+datadog-cli slos delete --id <id> --yes
+datadog-cli slos can-delete --id <id>
+datadog-cli slos correction list
+datadog-cli slos correction show --id <id>
+datadog-cli slos correction create --slo-id <id> --category <category> --start <time> [--end <time>] [--description <text>] [--timezone <tz>]
+datadog-cli slos correction update --id <id> [--category <category>] [--start <time>] [--end <time>] [--description <text>] [--timezone <tz>]
+datadog-cli slos correction delete --id <id> --yes
+```
+
+SLOs list output columns: `ID | NAME | TYPE | THRESHOLDS | TAGS`
+
+Correction list output columns: `ID | SLO_ID | CATEGORY | START | END | DESCRIPTION`
+
+`--type` accepts: `metric` (custom query), `monitor` (based on existing monitors)
+`--thresholds` accepts a JSON array, e.g. `[{"timeframe":"30d","target":99.9}]` (timeframe values: `7d`, `30d`, `90d`, `custom`)
+`--numerator` / `--denominator` are metric queries for metric-based SLOs
+`--monitor-ids` is a comma-separated list of monitor IDs for monitor-based SLOs
+`--category` accepts: `Scheduled Maintenance`, `Deployment`, `Infrastructure Issue`, `Other`
+`--from` / `--to` for `slos history` accept unix timestamps or relative time (e.g. `now-7d`, `now-30d`)
+`--start` / `--end` accept unix timestamps or relative time (e.g. `now-7d`)
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.

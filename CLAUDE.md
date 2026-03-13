@@ -57,6 +57,11 @@ CLI tool for querying Datadog from the terminal.
 
 - `datadogV2.MonitorsApi`: ListMonitorConfigPolicies, GetMonitorConfigPolicy, CreateMonitorConfigPolicy, UpdateMonitorConfigPolicy, DeleteMonitorConfigPolicy
 
+### SLOs
+
+- `datadogV1.ServiceLevelObjectivesApi`: ListSLOs, GetSLO, CreateSLO, UpdateSLO, DeleteSLO, CheckCanDeleteSLO, GetSLOHistory
+- `datadogV1.ServiceLevelObjectiveCorrectionsApi`: ListSLOCorrection, GetSLOCorrection, CreateSLOCorrection, UpdateSLOCorrection, DeleteSLOCorrection
+
 ## Code Style
 
 ### Imports

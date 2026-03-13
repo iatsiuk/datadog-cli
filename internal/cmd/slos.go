@@ -1,0 +1,1030 @@
+package cmd
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
+	"github.com/spf13/cobra"
+
+	"github.com/iatsiuk/datadog-cli/internal/client"
+	"github.com/iatsiuk/datadog-cli/internal/config"
+	"github.com/iatsiuk/datadog-cli/internal/output"
+)
+
+type slosAPI struct {
+	api         *datadogV1.ServiceLevelObjectivesApi
+	corrections *datadogV1.ServiceLevelObjectiveCorrectionsApi
+	ctx         context.Context
+}
+
+func defaultSLOsAPI() (*slosAPI, error) {
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	c, ctx := client.New(cfg)
+	return &slosAPI{
+		api:         datadogV1.NewServiceLevelObjectivesApi(c),
+		corrections: datadogV1.NewServiceLevelObjectiveCorrectionsApi(c),
+		ctx:         ctx,
+	}, nil
+}
+
+func parseThresholds(raw string) ([]datadogV1.SLOThreshold, error) {
+	var rawThresholds []struct {
+		Timeframe string   `json:"timeframe"`
+		Target    float64  `json:"target"`
+		Warning   *float64 `json:"warning,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(raw), &rawThresholds); err != nil {
+		return nil, fmt.Errorf("--thresholds: %w", err)
+	}
+	if len(rawThresholds) == 0 {
+		return nil, fmt.Errorf("--thresholds must not be empty")
+	}
+	result := make([]datadogV1.SLOThreshold, len(rawThresholds))
+	for i, t := range rawThresholds {
+		th := datadogV1.NewSLOThreshold(t.Target, datadogV1.SLOTimeframe(t.Timeframe))
+		if t.Warning != nil {
+			th.SetWarning(*t.Warning)
+		}
+		result[i] = *th
+	}
+	return result, nil
+}
+
+func sloTableRows(slos []datadogV1.ServiceLevelObjective) ([]string, [][]string) {
+	headers := []string{"ID", "NAME", "TYPE", "THRESHOLDS", "TAGS"}
+	var rows [][]string
+	for _, slo := range slos {
+		var thParts []string
+		for _, th := range slo.GetThresholds() {
+			part := string(th.GetTimeframe()) + ":" + strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
+			thParts = append(thParts, part)
+		}
+		rows = append(rows, []string{
+			slo.GetId(),
+			slo.GetName(),
+			string(slo.GetType()),
+			strings.Join(thParts, ", "),
+			strings.Join(slo.GetTags(), ", "),
+		})
+	}
+	return headers, rows
+}
+
+func printCorrectionTable(w io.Writer, data datadogV1.SLOCorrection) error {
+	attrs := data.GetAttributes()
+	start := ""
+	if s := attrs.Start; s != nil {
+		start = time.Unix(*s, 0).UTC().Format(time.RFC3339)
+	}
+	end := ""
+	if e, ok := attrs.GetEndOk(); ok && e != nil {
+		end = time.Unix(*e, 0).UTC().Format(time.RFC3339)
+	}
+	headers := []string{"FIELD", "VALUE"}
+	rows := [][]string{
+		{"ID", data.GetId()},
+		{"SLO ID", attrs.GetSloId()},
+		{"Category", string(attrs.GetCategory())},
+		{"Description", attrs.GetDescription()},
+		{"Start", start},
+		{"End", end},
+		{"Timezone", attrs.GetTimezone()},
+	}
+	return output.PrintTable(w, headers, rows)
+}
+
+// NewSLOsCommand returns the slos cobra command group.
+func NewSLOsCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "slos",
+		Short: "Manage Datadog SLOs",
+	}
+	cmd.AddCommand(newSLOsListCmd(defaultSLOsAPI))
+	cmd.AddCommand(newSLOsShowCmd(defaultSLOsAPI))
+	cmd.AddCommand(newSLOsHistoryCmd(defaultSLOsAPI))
+	cmd.AddCommand(newSLOsCreateCmd(defaultSLOsAPI))
+	cmd.AddCommand(newSLOsUpdateCmd(defaultSLOsAPI))
+	cmd.AddCommand(newSLOsDeleteCmd(defaultSLOsAPI))
+	cmd.AddCommand(newSLOsCanDeleteCmd(defaultSLOsAPI))
+	cmd.AddCommand(newSLOsCorrectionCmd(defaultSLOsAPI))
+	return cmd
+}
+
+func newSLOsListCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		query string
+		tags  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List SLOs",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			opts := datadogV1.NewListSLOsOptionalParameters()
+			if query != "" {
+				opts = opts.WithQuery(query)
+			}
+			if tags != "" {
+				opts = opts.WithTagsQuery(tags)
+			}
+
+			resp, httpResp, err := sapi.api.ListSLOs(sapi.ctx, *opts)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list SLOs: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				if data == nil {
+					data = []datadogV1.ServiceLevelObjective{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers, rows := sloTableRows(data)
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "filter SLOs by name/description")
+	cmd.Flags().StringVar(&tags, "tags", "", "filter SLOs by tags")
+	return cmd
+}
+
+func newSLOsShowCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var id string
+
+	cmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show SLO details",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.GetSLO(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get SLO: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			// build threshold rows: timeframe -> target [warning]
+			var thresholdParts []string
+			for _, th := range data.GetThresholds() {
+				part := string(th.GetTimeframe()) + ":" + strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
+				if th.HasWarning() {
+					part += " (warn:" + strconv.FormatFloat(th.GetWarning(), 'f', -1, 64) + ")"
+				}
+				thresholdParts = append(thresholdParts, part)
+			}
+
+			headers := []string{"FIELD", "VALUE"}
+			rows := [][]string{
+				{"ID", data.GetId()},
+				{"Name", data.GetName()},
+				{"Type", string(data.GetType())},
+				{"Description", data.GetDescription()},
+				{"Tags", strings.Join(data.GetTags(), ", ")},
+				{"Thresholds", strings.Join(thresholdParts, ", ")},
+			}
+			switch data.GetType() {
+			case datadogV1.SLOTYPE_METRIC:
+				q := data.GetQuery()
+				rows = append(rows,
+					[]string{"Numerator", q.GetNumerator()},
+					[]string{"Denominator", q.GetDenominator()},
+				)
+			case datadogV1.SLOTYPE_MONITOR:
+				ids := data.GetMonitorIds()
+				idStrs := make([]string, len(ids))
+				for i, id := range ids {
+					idStrs[i] = strconv.FormatInt(id, 10)
+				}
+				rows = append(rows, []string{"Monitor IDs", strings.Join(idStrs, ", ")})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID")
+	return cmd
+}
+
+func newSLOsHistoryCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		id      string
+		fromStr string
+		toStr   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "history",
+		Short: "Show SLO history",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			fromTs, err := parseUnixOrRelative(fromStr)
+			if err != nil {
+				return fmt.Errorf("--from: %w", err)
+			}
+			toTs, err := parseUnixOrRelative(toStr)
+			if err != nil {
+				return fmt.Errorf("--to: %w", err)
+			}
+			if fromTs >= toTs {
+				return fmt.Errorf("--from must be before --to")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.GetSLOHistory(sapi.ctx, id, fromTs, toTs)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get SLO history: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			overall := data.GetOverall()
+			sliValue := "N/A"
+			if v, ok := overall.GetSliValueOk(); ok && v != nil {
+				sliValue = strconv.FormatFloat(*v, 'f', 4, 64)
+			}
+
+			headers := []string{"FIELD", "VALUE"}
+			rows := [][]string{
+				{"SLI", sliValue},
+				{"Type", string(data.GetType())},
+			}
+			errorBudget := overall.GetErrorBudgetRemaining()
+			tfs := make([]string, 0, len(errorBudget))
+			for tf := range errorBudget {
+				tfs = append(tfs, tf)
+			}
+			sort.Strings(tfs)
+			for _, tf := range tfs {
+				rows = append(rows, []string{
+					"ERROR BUDGET (" + tf + ")",
+					strconv.FormatFloat(errorBudget[tf], 'f', 4, 64) + "%",
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-7d) (required)")
+	cmd.Flags().StringVar(&toStr, "to", "", "end time: unix timestamp or relative (e.g. now) (required)")
+	return cmd
+}
+
+func newSLOsCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		name        string
+		sloType     string
+		description string
+		tags        string
+		thresholds  string
+		numerator   string
+		denominator string
+		monitorIDs  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create an SLO",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+			if sloType == "" {
+				return fmt.Errorf("--type is required")
+			}
+			if thresholds == "" {
+				return fmt.Errorf("--thresholds is required")
+			}
+
+			sloThresholds, err := parseThresholds(thresholds)
+			if err != nil {
+				return err
+			}
+
+			sloTypeVal := datadogV1.SLOType(sloType)
+			body := datadogV1.NewServiceLevelObjectiveRequest(name, sloThresholds, sloTypeVal)
+			if description != "" {
+				body.SetDescription(description)
+			}
+			if tags != "" {
+				tagParts := strings.Split(tags, ",")
+				for i, p := range tagParts {
+					tagParts[i] = strings.TrimSpace(p)
+				}
+				body.SetTags(tagParts)
+			}
+
+			switch sloTypeVal {
+			case datadogV1.SLOTYPE_METRIC:
+				if numerator == "" || denominator == "" {
+					return fmt.Errorf("metric SLO requires --numerator and --denominator")
+				}
+				q := datadogV1.NewServiceLevelObjectiveQuery(denominator, numerator)
+				body.SetQuery(*q)
+			case datadogV1.SLOTYPE_MONITOR:
+				if monitorIDs == "" {
+					return fmt.Errorf("monitor SLO requires --monitor-ids")
+				}
+				parts := strings.Split(monitorIDs, ",")
+				ids := make([]int64, 0, len(parts))
+				for _, p := range parts {
+					id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+					if err != nil {
+						return fmt.Errorf("--monitor-ids: invalid id %q: %w", p, err)
+					}
+					ids = append(ids, id)
+				}
+				body.SetMonitorIds(ids)
+			default:
+				return fmt.Errorf("--type: unsupported SLO type %q, must be metric or monitor", sloType)
+			}
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.CreateSLO(sapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create SLO: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				if data == nil {
+					data = []datadogV1.ServiceLevelObjective{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers, rows := sloTableRows(data)
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "SLO name (required)")
+	cmd.Flags().StringVar(&sloType, "type", "", "SLO type: metric or monitor (required)")
+	cmd.Flags().StringVar(&description, "description", "", "SLO description")
+	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags")
+	cmd.Flags().StringVar(&thresholds, "thresholds", "", `thresholds JSON, e.g. '[{"timeframe":"30d","target":99.9}]' (required)`)
+	cmd.Flags().StringVar(&numerator, "numerator", "", "metric query for good events (metric SLO)")
+	cmd.Flags().StringVar(&denominator, "denominator", "", "metric query for total events (metric SLO)")
+	cmd.Flags().StringVar(&monitorIDs, "monitor-ids", "", "comma-separated monitor IDs (monitor SLO)")
+	return cmd
+}
+
+func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		id          string
+		name        string
+		description string
+		tags        string
+		thresholds  string
+		numerator   string
+		denominator string
+		monitorIDs  string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update an SLO",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			// fetch existing SLO
+			getResp, httpResp, err := sapi.api.GetSLO(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get SLO: %w", err)
+			}
+			// convert SLOResponseData to ServiceLevelObjective via JSON round-trip
+			rawData, err := json.Marshal(getResp.GetData())
+			if err != nil {
+				return fmt.Errorf("marshal SLO: %w", err)
+			}
+			var slo datadogV1.ServiceLevelObjective
+			if err := json.Unmarshal(rawData, &slo); err != nil {
+				return fmt.Errorf("unmarshal SLO: %w", err)
+			}
+			// drop response-only fields not accepted by the update API
+			slo.AdditionalProperties = nil
+			slo.CreatedAt = nil
+			slo.Creator = nil
+			slo.Id = nil
+			slo.ModifiedAt = nil
+			slo.MonitorTags = nil
+			// apply changes
+			if name != "" {
+				slo.SetName(name)
+			}
+			if cmd.Flags().Changed("description") {
+				slo.SetDescription(description)
+			}
+			if cmd.Flags().Changed("tags") {
+				if tags == "" {
+					slo.SetTags([]string{})
+				} else {
+					tagParts := strings.Split(tags, ",")
+					for i, p := range tagParts {
+						tagParts[i] = strings.TrimSpace(p)
+					}
+					slo.SetTags(tagParts)
+				}
+			}
+			if thresholds != "" {
+				sloThresholds, err := parseThresholds(thresholds)
+				if err != nil {
+					return err
+				}
+				slo.SetThresholds(sloThresholds)
+			}
+			if numerator != "" || denominator != "" {
+				if slo.GetType() != datadogV1.SLOTYPE_METRIC {
+					return fmt.Errorf("--numerator/--denominator: only valid for metric SLOs")
+				}
+				q := slo.GetQuery()
+				if numerator != "" {
+					q.SetNumerator(numerator)
+				}
+				if denominator != "" {
+					q.SetDenominator(denominator)
+				}
+				slo.SetQuery(q)
+			}
+			if monitorIDs != "" {
+				if slo.GetType() != datadogV1.SLOTYPE_MONITOR {
+					return fmt.Errorf("--monitor-ids: only valid for monitor SLOs")
+				}
+				parts := strings.Split(monitorIDs, ",")
+				ids := make([]int64, 0, len(parts))
+				for _, p := range parts {
+					mid, parseErr := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+					if parseErr != nil {
+						return fmt.Errorf("--monitor-ids: invalid id %q: %w", p, parseErr)
+					}
+					ids = append(ids, mid)
+				}
+				slo.SetMonitorIds(ids)
+			}
+
+			resp, httpResp, err := sapi.api.UpdateSLO(sapi.ctx, id, slo)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update SLO: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				if data == nil {
+					data = []datadogV1.ServiceLevelObjective{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers, rows := sloTableRows(data)
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID (required)")
+	cmd.Flags().StringVar(&name, "name", "", "new name")
+	cmd.Flags().StringVar(&description, "description", "", "new description")
+	cmd.Flags().StringVar(&tags, "tags", "", "new comma-separated tags")
+	cmd.Flags().StringVar(&thresholds, "thresholds", "", `new thresholds JSON, e.g. '[{"timeframe":"30d","target":99.9}]'`)
+	cmd.Flags().StringVar(&numerator, "numerator", "", "new metric query for good events (metric SLO)")
+	cmd.Flags().StringVar(&denominator, "denominator", "", "new metric query for total events (metric SLO)")
+	cmd.Flags().StringVar(&monitorIDs, "monitor-ids", "", "new comma-separated monitor IDs (monitor SLO)")
+	return cmd
+}
+
+func newSLOsDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		id  string
+		yes bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete an SLO",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if !yes {
+				return fmt.Errorf("--yes is required to confirm deletion")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.DeleteSLO(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete SLO: %w", err)
+			}
+
+			deleted := resp.GetData()
+			errs := resp.GetErrors()
+			if len(errs) > 0 {
+				errKeys := make([]string, 0, len(errs))
+				for k := range errs {
+					errKeys = append(errKeys, k)
+				}
+				sort.Strings(errKeys)
+				for _, k := range errKeys {
+					fmt.Fprintf(cmd.ErrOrStderr(), "error deleting %s: %s\n", k, errs[k]) //nolint:errcheck
+				}
+			}
+			if len(deleted) > 0 {
+				fmt.Fprintf(cmd.OutOrStdout(), "deleted: %s\n", strings.Join(deleted, ", ")) //nolint:errcheck
+			}
+			if len(errs) > 0 {
+				return fmt.Errorf("failed to delete %d SLO(s)", len(errs))
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
+}
+
+func newSLOsCanDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var id string
+
+	cmd := &cobra.Command{
+		Use:   "can-delete",
+		Short: "Check if an SLO can be deleted",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.CheckCanDeleteSLO(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("check can delete SLO: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), resp)
+			}
+
+			headers := []string{"ID", "STATUS"}
+			var rows [][]string
+
+			if data := resp.GetData(); data.HasOk() {
+				for _, okID := range data.GetOk() {
+					rows = append(rows, []string{okID, "can delete"})
+				}
+			}
+			canDeleteErrs := resp.GetErrors()
+			errIDs := make([]string, 0, len(canDeleteErrs))
+			for errID := range canDeleteErrs {
+				errIDs = append(errIDs, errID)
+			}
+			sort.Strings(errIDs)
+			for _, errID := range errIDs {
+				rows = append(rows, []string{errID, "blocked: " + canDeleteErrs[errID]})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID (required)")
+	return cmd
+}
+
+func newSLOsCorrectionCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "correction",
+		Short: "Manage SLO corrections",
+	}
+	cmd.AddCommand(newSLOCorrectionListCmd(mkAPI))
+	cmd.AddCommand(newSLOCorrectionShowCmd(mkAPI))
+	cmd.AddCommand(newSLOCorrectionCreateCmd(mkAPI))
+	cmd.AddCommand(newSLOCorrectionUpdateCmd(mkAPI))
+	cmd.AddCommand(newSLOCorrectionDeleteCmd(mkAPI))
+	return cmd
+}
+
+func newSLOCorrectionListCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List SLO corrections",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.corrections.ListSLOCorrection(sapi.ctx)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list SLO corrections: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				if data == nil {
+					data = []datadogV1.SLOCorrection{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"ID", "SLO_ID", "CATEGORY", "START", "END", "DESCRIPTION"}
+			var rows [][]string
+			for _, c := range data {
+				attrs := c.GetAttributes()
+				start := ""
+				if s := attrs.Start; s != nil {
+					start = time.Unix(*s, 0).UTC().Format("2006-01-02 15:04")
+				}
+				end := ""
+				if e, ok := attrs.GetEndOk(); ok && e != nil {
+					end = time.Unix(*e, 0).UTC().Format("2006-01-02 15:04")
+				}
+				rows = append(rows, []string{
+					c.GetId(),
+					attrs.GetSloId(),
+					string(attrs.GetCategory()),
+					start,
+					end,
+					attrs.GetDescription(),
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
+	}
+	return cmd
+}
+
+func newSLOCorrectionShowCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var id string
+
+	cmd := &cobra.Command{
+		Use:   "show",
+		Short: "Show SLO correction details",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.corrections.GetSLOCorrection(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get SLO correction: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			return printCorrectionTable(cmd.OutOrStdout(), data)
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "correction ID")
+	return cmd
+}
+
+func newSLOCorrectionCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		sloID       string
+		category    string
+		startStr    string
+		endStr      string
+		description string
+		timezone    string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create an SLO correction",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if sloID == "" {
+				return fmt.Errorf("--slo-id is required")
+			}
+			if category == "" {
+				return fmt.Errorf("--category is required")
+			}
+			if startStr == "" {
+				return fmt.Errorf("--start is required")
+			}
+
+			cat, err := datadogV1.NewSLOCorrectionCategoryFromValue(category)
+			if err != nil {
+				return fmt.Errorf("--category: %w", err)
+			}
+
+			startTs, err := parseUnixOrRelative(startStr)
+			if err != nil {
+				return fmt.Errorf("--start: %w", err)
+			}
+
+			attrs := datadogV1.NewSLOCorrectionCreateRequestAttributes(
+				*cat,
+				sloID,
+				startTs,
+			)
+			if endStr != "" {
+				endTs, err := parseUnixOrRelative(endStr)
+				if err != nil {
+					return fmt.Errorf("--end: %w", err)
+				}
+				attrs.SetEnd(endTs)
+			}
+			if description != "" {
+				attrs.SetDescription(description)
+			}
+			if timezone != "" {
+				attrs.SetTimezone(timezone)
+			}
+
+			data := datadogV1.NewSLOCorrectionCreateData(datadogV1.SLOCORRECTIONTYPE_CORRECTION)
+			data.SetAttributes(*attrs)
+			body := datadogV1.NewSLOCorrectionCreateRequest()
+			body.SetData(*data)
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.corrections.CreateSLOCorrection(sapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create SLO correction: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			corrData := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), corrData)
+			}
+			return printCorrectionTable(cmd.OutOrStdout(), corrData)
+		},
+	}
+
+	cmd.Flags().StringVar(&sloID, "slo-id", "", "SLO ID (required)")
+	cmd.Flags().StringVar(&category, "category", "", "correction category (required): Scheduled Maintenance, Deployment, Infrastructure Issue, Other")
+	cmd.Flags().StringVar(&startStr, "start", "", "start time: unix timestamp or relative (required)")
+	cmd.Flags().StringVar(&endStr, "end", "", "end time: unix timestamp or relative")
+	cmd.Flags().StringVar(&description, "description", "", "correction description")
+	cmd.Flags().StringVar(&timezone, "timezone", "", "timezone (default UTC)")
+	return cmd
+}
+
+func newSLOCorrectionUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		id          string
+		category    string
+		startStr    string
+		endStr      string
+		description string
+		timezone    string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update an SLO correction",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+
+			attrs := datadogV1.NewSLOCorrectionUpdateRequestAttributes()
+			if category != "" {
+				cat, err := datadogV1.NewSLOCorrectionCategoryFromValue(category)
+				if err != nil {
+					return fmt.Errorf("--category: %w", err)
+				}
+				attrs.SetCategory(*cat)
+			}
+			if startStr != "" {
+				startTs, err := parseUnixOrRelative(startStr)
+				if err != nil {
+					return fmt.Errorf("--start: %w", err)
+				}
+				attrs.SetStart(startTs)
+			}
+			if endStr != "" {
+				endTs, err := parseUnixOrRelative(endStr)
+				if err != nil {
+					return fmt.Errorf("--end: %w", err)
+				}
+				attrs.SetEnd(endTs)
+			}
+			if cmd.Flags().Changed("description") {
+				attrs.SetDescription(description)
+			}
+			if cmd.Flags().Changed("timezone") {
+				attrs.SetTimezone(timezone)
+			}
+
+			data := datadogV1.NewSLOCorrectionUpdateData()
+			data.SetAttributes(*attrs)
+			body := datadogV1.NewSLOCorrectionUpdateRequest()
+			body.SetData(*data)
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.corrections.UpdateSLOCorrection(sapi.ctx, id, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update SLO correction: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			corrData := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), corrData)
+			}
+			return printCorrectionTable(cmd.OutOrStdout(), corrData)
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "correction ID (required)")
+	cmd.Flags().StringVar(&category, "category", "", "new category")
+	cmd.Flags().StringVar(&startStr, "start", "", "new start time: unix timestamp or relative")
+	cmd.Flags().StringVar(&endStr, "end", "", "new end time: unix timestamp or relative")
+	cmd.Flags().StringVar(&description, "description", "", "new description")
+	cmd.Flags().StringVar(&timezone, "timezone", "", "new timezone")
+	return cmd
+}
+
+func newSLOCorrectionDeleteCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		id  string
+		yes bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete an SLO correction",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			if !yes {
+				return fmt.Errorf("--yes is required to confirm deletion")
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := sapi.corrections.DeleteSLOCorrection(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete SLO correction: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "deleted: %s\n", id) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "correction ID (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
+	return cmd
+}
