@@ -234,6 +234,7 @@ func newCITestTailCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 						return nil
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
+					currSeen = make(map[string]struct{})
 				} else {
 					prevSeen = nextSeen
 					currSeen = make(map[string]struct{})
@@ -325,13 +326,17 @@ func newCITestAggregateCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 			buckets := respData.GetBuckets()
 
 			groupHeaders := groupBy
-			var computeKeys []string
-			if len(buckets) > 0 {
-				for k := range buckets[0].GetComputes() {
-					computeKeys = append(computeKeys, k)
+			seenComputeKeys := make(map[string]struct{})
+			for _, b := range buckets {
+				for k := range b.GetComputes() {
+					seenComputeKeys[k] = struct{}{}
 				}
-				sort.Strings(computeKeys)
 			}
+			var computeKeys []string
+			for k := range seenComputeKeys {
+				computeKeys = append(computeKeys, k)
+			}
+			sort.Strings(computeKeys)
 
 			headers := append(append([]string(nil), groupHeaders...), computeKeys...)
 			if len(headers) == 0 {

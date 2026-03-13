@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -248,6 +249,7 @@ func newCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 						return nil
 					}
 					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
+					currSeen = make(map[string]struct{})
 				} else {
 					prevSeen = nextSeen
 					currSeen = make(map[string]struct{})
@@ -339,13 +341,17 @@ func newCIPipelineAggregateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Comma
 			buckets := respData.GetBuckets()
 
 			groupHeaders := groupBy
-			var computeKeys []string
-			if len(buckets) > 0 {
-				for k := range buckets[0].GetComputes() {
-					computeKeys = append(computeKeys, k)
+			seenComputeKeys := make(map[string]struct{})
+			for _, b := range buckets {
+				for k := range b.GetComputes() {
+					seenComputeKeys[k] = struct{}{}
 				}
-				sort.Strings(computeKeys)
 			}
+			var computeKeys []string
+			for k := range seenComputeKeys {
+				computeKeys = append(computeKeys, k)
+			}
+			sort.Strings(computeKeys)
 
 			headers := append(append([]string(nil), groupHeaders...), computeKeys...)
 			if len(headers) == 0 {
@@ -411,6 +417,7 @@ func newCIPipelineCreateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command 
 		levelStr     string
 		gitBranch    string
 		gitSha       string
+		repoURL      string
 	)
 
 	cmd := &cobra.Command{
@@ -451,7 +458,7 @@ func newCIPipelineCreateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command 
 				return fmt.Errorf("--git-branch is required when --git-sha is specified")
 			}
 			if gitBranch != "" || gitSha != "" {
-				gitInfo := datadogV2.NewCIAppGitInfo("", "", gitSha)
+				gitInfo := datadogV2.NewCIAppGitInfo("", repoURL, gitSha)
 				if gitBranch != "" {
 					gitInfo.Branch = *datadog.NewNullableString(&gitBranch)
 				}
@@ -495,6 +502,7 @@ func newCIPipelineCreateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command 
 	cmd.Flags().StringVar(&levelStr, "level", "pipeline", "event level")
 	cmd.Flags().StringVar(&gitBranch, "git-branch", "", "git branch")
 	cmd.Flags().StringVar(&gitSha, "git-sha", "", "git commit SHA")
+	cmd.Flags().StringVar(&repoURL, "repo-url", "", "repository URL")
 	return cmd
 }
 
@@ -516,7 +524,7 @@ func parseCIComputeSpec(s string) (datadogV2.CIAppAggregationFunction, string, e
 func fmtCIDuration(v interface{}) string {
 	switch d := v.(type) {
 	case float64:
-		return (time.Duration(int64(d)) * time.Nanosecond).String()
+		return (time.Duration(int64(math.Round(d))) * time.Nanosecond).String()
 	case int64:
 		return (time.Duration(d) * time.Nanosecond).String()
 	}
