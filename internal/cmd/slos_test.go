@@ -193,6 +193,91 @@ func TestSLOsList_Empty(t *testing.T) {
 	}
 }
 
+func buildSLOsShowCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	slos := &cobra.Command{Use: "slos"}
+	slos.AddCommand(newSLOsShowCmd(mkAPI))
+	root.AddCommand(slos)
+	return root, buf
+}
+
+const mockSLOShowResponse = `{
+	"data": {
+		"id": "abc123",
+		"name": "API Availability",
+		"type": "metric",
+		"description": "Tracks API uptime",
+		"thresholds": [
+			{"timeframe": "30d", "target": 99.9, "target_display": "99.9"},
+			{"timeframe": "7d", "target": 99.5, "target_display": "99.5", "warning": 99.7}
+		],
+		"tags": ["env:prod", "service:api"],
+		"created_at": 1700000000,
+		"modified_at": 1700001000
+	}
+}`
+
+func TestSLOsShow_TableOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsShowCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "show", "--id", "abc123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"abc123", "API Availability", "metric", "Tracks API uptime", "30d", "99.9", "7d", "99.5", "env:prod"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOsShow_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsShowCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"--json", "slos", "show", "--id", "abc123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{`"id"`, "API Availability", "metric"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOsShow_MissingID(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildSLOsShowCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "show"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --id flag")
+	}
+}
+
 func TestNewSLOsCommand_Subcommands(t *testing.T) {
 	t.Parallel()
 	cmd := NewSLOsCommand()

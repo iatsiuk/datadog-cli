@@ -122,11 +122,64 @@ func newSLOsListCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 	return cmd
 }
 
-func newSLOsShowCmd(_ func() (*slosAPI, error)) *cobra.Command {
-	return &cobra.Command{
+func newSLOsShowCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var id string
+
+	cmd := &cobra.Command{
 		Use:   "show",
 		Short: "Show SLO details",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.GetSLO(sapi.ctx, id)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get SLO: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			// build threshold rows: timeframe -> target [warning]
+			var thresholdParts []string
+			for _, th := range data.GetThresholds() {
+				part := string(th.GetTimeframe()) + ":" + strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
+				if th.HasWarning() {
+					part += " (warn:" + strconv.FormatFloat(th.GetWarning(), 'f', -1, 64) + ")"
+				}
+				thresholdParts = append(thresholdParts, part)
+			}
+
+			headers := []string{"FIELD", "VALUE"}
+			rows := [][]string{
+				{"ID", data.GetId()},
+				{"Name", data.GetName()},
+				{"Type", string(data.GetType())},
+				{"Description", data.GetDescription()},
+				{"Tags", strings.Join(data.GetTags(), ", ")},
+				{"Thresholds", strings.Join(thresholdParts, ", ")},
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
 	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID")
+	return cmd
 }
 
 func newSLOsHistoryCmd(_ func() (*slosAPI, error)) *cobra.Command {
