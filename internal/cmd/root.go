@@ -22,6 +22,7 @@ func NewRootCommand(version string) *cobra.Command {
 	root.AddCommand(NewMonitorsCommand())
 	root.AddCommand(NewRUMCommand())
 	root.AddCommand(NewSLOsCommand())
+	root.AddCommand(NewUsersCommand())
 	return root
 }
 
