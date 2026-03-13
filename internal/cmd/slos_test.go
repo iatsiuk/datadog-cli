@@ -3,7 +3,9 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -430,6 +432,187 @@ func TestSLOsHistory_MissingFlags(t *testing.T) {
 				t.Fatal("expected error for missing flags")
 			}
 		})
+	}
+}
+
+func buildSLOsCreateCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	slos := &cobra.Command{Use: "slos"}
+	slos.AddCommand(newSLOsCreateCmd(mkAPI))
+	root.AddCommand(slos)
+	return root, buf
+}
+
+const mockSLOCreateResponse = `{
+	"data": [
+		{
+			"id": "new123",
+			"name": "API Uptime",
+			"type": "metric",
+			"thresholds": [{"timeframe": "30d", "target": 99.9}],
+			"tags": ["env:prod"]
+		}
+	]
+}`
+
+func TestSLOsCreate_MetricSLO(t *testing.T) {
+	t.Parallel()
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCreateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{
+		"slos", "create",
+		"--name", "API Uptime",
+		"--type", "metric",
+		"--thresholds", `[{"timeframe":"30d","target":99.9}]`,
+		"--numerator", "sum:requests.success{*}.as_count()",
+		"--denominator", "sum:requests.total{*}.as_count()",
+		"--tags", "env:prod",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if gotBody["name"] != "API Uptime" {
+		t.Errorf("name = %v, want API Uptime", gotBody["name"])
+	}
+	if gotBody["type"] != "metric" {
+		t.Errorf("type = %v, want metric", gotBody["type"])
+	}
+	query, ok := gotBody["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query field missing or wrong type: %v", gotBody["query"])
+	}
+	if query["numerator"] != "sum:requests.success{*}.as_count()" {
+		t.Errorf("numerator = %v", query["numerator"])
+	}
+	if query["denominator"] != "sum:requests.total{*}.as_count()" {
+		t.Errorf("denominator = %v", query["denominator"])
+	}
+
+	out := buf.String()
+	for _, want := range []string{"new123", "API Uptime", "metric", "99.9", "30d"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOsCreate_MonitorSLO(t *testing.T) {
+	t.Parallel()
+	var gotBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[{"id":"mon123","name":"Login SLO","type":"monitor","thresholds":[{"timeframe":"7d","target":99.0}],"tags":[]}]}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSLOsCreateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{
+		"slos", "create",
+		"--name", "Login SLO",
+		"--type", "monitor",
+		"--thresholds", `[{"timeframe":"7d","target":99.0}]`,
+		"--monitor-ids", "1234,5678",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if gotBody["type"] != "monitor" {
+		t.Errorf("type = %v, want monitor", gotBody["type"])
+	}
+	ids, ok := gotBody["monitor_ids"].([]interface{})
+	if !ok {
+		t.Fatalf("monitor_ids missing or wrong type: %v", gotBody["monitor_ids"])
+	}
+	if len(ids) != 2 {
+		t.Errorf("monitor_ids len = %d, want 2", len(ids))
+	}
+}
+
+func TestSLOsCreate_RequiredFlags(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{
+			"missing name",
+			[]string{"slos", "create", "--type", "metric", "--thresholds", `[{"timeframe":"30d","target":99.9}]`, "--numerator", "n", "--denominator", "d"},
+		},
+		{
+			"missing type",
+			[]string{"slos", "create", "--name", "X", "--thresholds", `[{"timeframe":"30d","target":99.9}]`},
+		},
+		{
+			"missing thresholds",
+			[]string{"slos", "create", "--name", "X", "--type", "metric"},
+		},
+		{
+			"metric missing numerator/denominator",
+			[]string{"slos", "create", "--name", "X", "--type", "metric", "--thresholds", `[{"timeframe":"30d","target":99.9}]`},
+		},
+		{
+			"monitor missing monitor-ids",
+			[]string{"slos", "create", "--name", "X", "--type", "monitor", "--thresholds", `[{"timeframe":"7d","target":99.0}]`},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildSLOsCreateCmd(newTestSLOsAPI(srv))
+			root.SetArgs(tc.args)
+			if err := root.Execute(); err == nil {
+				t.Fatalf("expected error for %q", tc.name)
+			}
+		})
+	}
+}
+
+func TestSLOsCreate_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOCreateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsCreateCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{
+		"--json", "slos", "create",
+		"--name", "API Uptime",
+		"--type", "metric",
+		"--thresholds", `[{"timeframe":"30d","target":99.9}]`,
+		"--numerator", "sum:requests.success{*}.as_count()",
+		"--denominator", "sum:requests.total{*}.as_count()",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{`"id"`, "new123", "API Uptime"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
 	}
 }
 

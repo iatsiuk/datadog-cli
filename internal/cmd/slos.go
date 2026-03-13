@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -255,11 +256,143 @@ func newSLOsHistoryCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 	return cmd
 }
 
-func newSLOsCreateCmd(_ func() (*slosAPI, error)) *cobra.Command {
-	return &cobra.Command{
+func newSLOsCreateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		name        string
+		sloType     string
+		description string
+		tags        string
+		thresholds  string
+		numerator   string
+		denominator string
+		monitorIDs  string
+	)
+
+	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create an SLO",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if name == "" {
+				return fmt.Errorf("--name is required")
+			}
+			if sloType == "" {
+				return fmt.Errorf("--type is required")
+			}
+			if thresholds == "" {
+				return fmt.Errorf("--thresholds is required")
+			}
+
+			var rawThresholds []struct {
+				Timeframe string   `json:"timeframe"`
+				Target    float64  `json:"target"`
+				Warning   *float64 `json:"warning,omitempty"`
+			}
+			if err := json.Unmarshal([]byte(thresholds), &rawThresholds); err != nil {
+				return fmt.Errorf("--thresholds: %w", err)
+			}
+			if len(rawThresholds) == 0 {
+				return fmt.Errorf("--thresholds must not be empty")
+			}
+
+			sloThresholds := make([]datadogV1.SLOThreshold, len(rawThresholds))
+			for i, t := range rawThresholds {
+				th := datadogV1.NewSLOThreshold(t.Target, datadogV1.SLOTimeframe(t.Timeframe))
+				if t.Warning != nil {
+					th.SetWarning(*t.Warning)
+				}
+				sloThresholds[i] = *th
+			}
+
+			sloTypeVal := datadogV1.SLOType(sloType)
+			body := datadogV1.NewServiceLevelObjectiveRequest(name, sloThresholds, sloTypeVal)
+			if description != "" {
+				body.SetDescription(description)
+			}
+			if tags != "" {
+				body.SetTags(strings.Split(tags, ","))
+			}
+
+			switch sloTypeVal {
+			case datadogV1.SLOTYPE_METRIC:
+				if numerator == "" || denominator == "" {
+					return fmt.Errorf("metric SLO requires --numerator and --denominator")
+				}
+				q := datadogV1.NewServiceLevelObjectiveQuery(denominator, numerator)
+				body.SetQuery(*q)
+			case datadogV1.SLOTYPE_MONITOR:
+				if monitorIDs == "" {
+					return fmt.Errorf("monitor SLO requires --monitor-ids")
+				}
+				parts := strings.Split(monitorIDs, ",")
+				ids := make([]int64, 0, len(parts))
+				for _, p := range parts {
+					id, err := strconv.ParseInt(strings.TrimSpace(p), 10, 64)
+					if err != nil {
+						return fmt.Errorf("--monitor-ids: invalid id %q: %w", p, err)
+					}
+					ids = append(ids, id)
+				}
+				body.SetMonitorIds(ids)
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.CreateSLO(sapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create SLO: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				if data == nil {
+					data = []datadogV1.ServiceLevelObjective{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			headers := []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "TAGS"}
+			var rows [][]string
+			for _, slo := range data {
+				target := ""
+				timeframe := ""
+				if ths := slo.GetThresholds(); len(ths) > 0 {
+					th := ths[0]
+					target = strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
+					timeframe = string(th.GetTimeframe())
+				}
+				rows = append(rows, []string{
+					slo.GetId(),
+					slo.GetName(),
+					string(slo.GetType()),
+					target,
+					timeframe,
+					strings.Join(slo.GetTags(), ", "),
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
 	}
+
+	cmd.Flags().StringVar(&name, "name", "", "SLO name (required)")
+	cmd.Flags().StringVar(&sloType, "type", "", "SLO type: metric or monitor (required)")
+	cmd.Flags().StringVar(&description, "description", "", "SLO description")
+	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tags")
+	cmd.Flags().StringVar(&thresholds, "thresholds", "", `thresholds JSON, e.g. '[{"timeframe":"30d","target":99.9}]' (required)`)
+	cmd.Flags().StringVar(&numerator, "numerator", "", "metric query for good events (metric SLO)")
+	cmd.Flags().StringVar(&denominator, "denominator", "", "metric query for total events (metric SLO)")
+	cmd.Flags().StringVar(&monitorIDs, "monitor-ids", "", "comma-separated monitor IDs (monitor SLO)")
+	return cmd
 }
 
 func newSLOsUpdateCmd(_ func() (*slosAPI, error)) *cobra.Command {
