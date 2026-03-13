@@ -483,6 +483,8 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			if err := json.Unmarshal(rawData, &slo); err != nil {
 				return fmt.Errorf("unmarshal SLO: %w", err)
 			}
+			// drop response-only fields (e.g. configured_alert_ids) captured as AdditionalProperties
+			slo.AdditionalProperties = nil
 
 			// apply changes
 			if name != "" {
