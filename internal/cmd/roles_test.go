@@ -439,3 +439,197 @@ func TestRolesDeleteMissingYes(t *testing.T) {
 		t.Fatal("expected error when --yes not provided")
 	}
 }
+
+const mockPermissionsResponse = `{
+	"data": [
+		{
+			"type": "permissions",
+			"id": "perm-001",
+			"attributes": {
+				"name": "logs_read_data",
+				"display_name": "Logs Read Data",
+				"group_name": "Log Management",
+				"description": "Read log data."
+			}
+		},
+		{
+			"type": "permissions",
+			"id": "perm-002",
+			"attributes": {
+				"name": "metrics_read",
+				"display_name": "Metrics Read",
+				"group_name": "Metrics",
+				"description": "Read metrics."
+			}
+		}
+	]
+}`
+
+func buildRolesListPermissionsCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	roles := &cobra.Command{Use: "roles"}
+	roles.AddCommand(newRolesListPermissionsCmd(mkAPI))
+	users.AddCommand(roles)
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestRolesListPermissionsTableOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPermissionsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRolesListPermissionsCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "list-permissions", "--role-id", "role-abc-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got := buf.String()
+	checks := []string{"ID", "NAME", "GROUP_NAME", "DESCRIPTION",
+		"perm-001", "logs_read_data", "Log Management",
+		"perm-002", "metrics_read", "Metrics"}
+	for _, want := range checks {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\ngot: %s", want, got)
+		}
+	}
+}
+
+func TestRolesListPermissionsJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPermissionsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRolesListPermissionsCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"--json", "users", "roles", "list-permissions", "--role-id", "role-abc-123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("JSON unmarshal: %v\noutput: %s", err, buf.String())
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 permissions, got %d", len(result))
+	}
+}
+
+func buildRolesGrantPermissionCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	roles := &cobra.Command{Use: "roles"}
+	roles.AddCommand(newRolesGrantPermissionCmd(mkAPI))
+	users.AddCommand(roles)
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestRolesGrantPermissionSuccess(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPermissionsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRolesGrantPermissionCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "grant-permission", "--role-id", "role-abc-123", "--permission-id", "perm-001"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var reqBody map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+		t.Fatalf("request body unmarshal: %v", err)
+	}
+	data, _ := reqBody["data"].(map[string]interface{})
+	if got := data["id"]; got != "perm-001" {
+		t.Errorf("request permission id = %v, want perm-001", got)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "perm-001") || !strings.Contains(got, "role-abc-123") {
+		t.Errorf("output missing confirmation\ngot: %s", got)
+	}
+}
+
+func buildRolesRevokePermissionCmd(mkAPI func() (*rolesAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	users := &cobra.Command{Use: "users"}
+	roles := &cobra.Command{Use: "roles"}
+	roles.AddCommand(newRolesRevokePermissionCmd(mkAPI))
+	users.AddCommand(roles)
+	root.AddCommand(users)
+	return root, buf
+}
+
+func TestRolesRevokePermissionSuccess(t *testing.T) {
+	t.Parallel()
+
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockPermissionsResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildRolesRevokePermissionCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "revoke-permission", "--role-id", "role-abc-123", "--permission-id", "perm-001", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var reqBody map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+		t.Fatalf("request body unmarshal: %v", err)
+	}
+	data, _ := reqBody["data"].(map[string]interface{})
+	if got := data["id"]; got != "perm-001" {
+		t.Errorf("request permission id = %v, want perm-001", got)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "perm-001") || !strings.Contains(got, "role-abc-123") {
+		t.Errorf("output missing confirmation\ngot: %s", got)
+	}
+}
+
+func TestRolesRevokePermissionMissingYes(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildRolesRevokePermissionCmd(newTestRolesAPI(srv))
+	root.SetArgs([]string{"users", "roles", "revoke-permission", "--role-id", "role-abc-123", "--permission-id", "perm-001"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error when --yes not provided")
+	}
+}

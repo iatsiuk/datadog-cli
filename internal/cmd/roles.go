@@ -39,6 +39,9 @@ func NewRolesCommand() *cobra.Command {
 	cmd.AddCommand(newRolesCreateCmd(defaultRolesAPI))
 	cmd.AddCommand(newRolesUpdateCmd(defaultRolesAPI))
 	cmd.AddCommand(newRolesDeleteCmd(defaultRolesAPI))
+	cmd.AddCommand(newRolesListPermissionsCmd(defaultRolesAPI))
+	cmd.AddCommand(newRolesGrantPermissionCmd(defaultRolesAPI))
+	cmd.AddCommand(newRolesRevokePermissionCmd(defaultRolesAPI))
 	return cmd
 }
 
@@ -271,6 +274,143 @@ func newRolesDeleteCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	_ = cmd.MarkFlagRequired("id")
 	return cmd
+}
+
+func newRolesListPermissionsCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
+	var roleID string
+
+	cmd := &cobra.Command{
+		Use:   "list-permissions",
+		Short: "List permissions for a role",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := rapi.api.ListRolePermissions(rapi.ctx, roleID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("list role permissions: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				if data == nil {
+					data = []datadogV2.Permission{}
+				}
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			return printPermissionsTable(cmd.OutOrStdout(), data)
+		},
+	}
+
+	cmd.Flags().StringVar(&roleID, "role-id", "", "role ID")
+	_ = cmd.MarkFlagRequired("role-id")
+	return cmd
+}
+
+func newRolesGrantPermissionCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
+	var roleID, permissionID string
+
+	cmd := &cobra.Command{
+		Use:   "grant-permission",
+		Short: "Grant a permission to a role",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			data := datadogV2.NewRelationshipToPermissionData()
+			data.SetId(permissionID)
+			body := datadogV2.NewRelationshipToPermission()
+			body.SetData(*data)
+
+			_, httpResp, err := rapi.api.AddPermissionToRole(rapi.ctx, roleID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("grant permission: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Granted permission %s to role %s\n", permissionID, roleID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&roleID, "role-id", "", "role ID")
+	cmd.Flags().StringVar(&permissionID, "permission-id", "", "permission ID")
+	_ = cmd.MarkFlagRequired("role-id")
+	_ = cmd.MarkFlagRequired("permission-id")
+	return cmd
+}
+
+func newRolesRevokePermissionCmd(mkAPI func() (*rolesAPI, error)) *cobra.Command {
+	var roleID, permissionID string
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "revoke-permission",
+		Short: "Revoke a permission from a role",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !yes {
+				return fmt.Errorf("pass --yes to confirm revoking permission %s from role %s", permissionID, roleID)
+			}
+
+			rapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			data := datadogV2.NewRelationshipToPermissionData()
+			data.SetId(permissionID)
+			body := datadogV2.NewRelationshipToPermission()
+			body.SetData(*data)
+
+			_, httpResp, err := rapi.api.RemovePermissionFromRole(rapi.ctx, roleID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("revoke permission: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Revoked permission %s from role %s\n", permissionID, roleID) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&roleID, "role-id", "", "role ID")
+	cmd.Flags().StringVar(&permissionID, "permission-id", "", "permission ID")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm revocation")
+	_ = cmd.MarkFlagRequired("role-id")
+	_ = cmd.MarkFlagRequired("permission-id")
+	return cmd
+}
+
+func printPermissionsTable(w io.Writer, data []datadogV2.Permission) error {
+	headers := []string{"ID", "NAME", "GROUP_NAME", "DESCRIPTION"}
+	var rows [][]string
+	for _, p := range data {
+		attrs := p.GetAttributes()
+		rows = append(rows, []string{
+			p.GetId(),
+			attrs.GetName(),
+			attrs.GetGroupName(),
+			attrs.GetDescription(),
+		})
+	}
+	return output.PrintTable(w, headers, rows)
 }
 
 func extractRolePermissionIDs(r datadogV2.Role) []string {

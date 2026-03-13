@@ -102,11 +102,11 @@
 - [x] run `make build` -- must pass
 
 ### Task 9: Roles permissions grant/revoke with tests
-- [ ] write tests for `users roles grant-permission --role-id <id> --permission-id <id>` -- success
-- [ ] write tests for `users roles revoke-permission --role-id <id> --permission-id <id> --yes` -- success
-- [ ] write tests for `users roles list-permissions --role-id <id>` -- table output
-- [ ] implement permission management subcommands -- call `AddPermissionToRole`, `RemovePermissionFromRole`, `ListRolePermissions`
-- [ ] run `make build` -- must pass
+- [x] write tests for `users roles grant-permission --role-id <id> --permission-id <id>` -- success
+- [x] write tests for `users roles revoke-permission --role-id <id> --permission-id <id> --yes` -- success
+- [x] write tests for `users roles list-permissions --role-id <id>` -- table output
+- [x] implement permission management subcommands -- call `AddPermissionToRole`, `RemovePermissionFromRole`, `ListRolePermissions`
+- [x] run `make build` -- must pass
 
 ### Task 10: Teams API wrapper and list with tests
 - [ ] write tests for `newTestTeamsAPI` helper
