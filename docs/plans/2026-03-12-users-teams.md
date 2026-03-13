@@ -87,12 +87,12 @@
 - [x] run `make build` -- must pass
 
 ### Task 7: Roles show/create with tests
-- [ ] write tests for `users roles show --id <id>` -- role details with permissions list
-- [ ] write tests for `users roles create --name <name>` -- capture request body
-- [ ] write tests for `users roles create` -- required flags validation
-- [ ] implement `newRolesShowCmd` -- call `GetRole`
-- [ ] implement `newRolesCreateCmd` -- call `CreateRole` with name
-- [ ] run `make build` -- must pass
+- [x] write tests for `users roles show --id <id>` -- role details with permissions list
+- [x] write tests for `users roles create --name <name>` -- capture request body
+- [x] write tests for `users roles create` -- required flags validation
+- [x] implement `newRolesShowCmd` -- call `GetRole`
+- [x] implement `newRolesCreateCmd` -- call `CreateRole` with name
+- [x] run `make build` -- must pass
 
 ### Task 8: Roles update/delete with tests
 - [ ] write tests for `users roles update --id <id> --name <name>`
