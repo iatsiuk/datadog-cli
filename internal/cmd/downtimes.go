@@ -16,8 +16,9 @@ import (
 )
 
 var (
-	errDowntimeIDRequired    = errors.New("--id is required")
-	errDowntimeScopeRequired = errors.New("--scope is required")
+	errDowntimeIDRequired            = errors.New("--id is required")
+	errDowntimeScopeRequired         = errors.New("--scope is required")
+	errDowntimeMonitorFlagsExclusive = errors.New("--monitor-id and --monitor-tags are mutually exclusive")
 )
 
 type downtimesAPI struct {
@@ -242,6 +243,9 @@ func newDowntimeCreateCmd(mkAPI func() (*downtimesAPI, error)) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if scope == "" {
 				return errDowntimeScopeRequired
+			}
+			if monitorID != 0 && len(monitorTags) > 0 {
+				return errDowntimeMonitorFlagsExclusive
 			}
 
 			var monIdentifier datadogV2.DowntimeMonitorIdentifier

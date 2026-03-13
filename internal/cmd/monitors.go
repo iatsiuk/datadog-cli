@@ -137,7 +137,7 @@ func newMonitorsSearchCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 			if query != "" {
 				opts = opts.WithQuery(query)
 			}
-			if page > 0 {
+			if cmd.Flags().Changed("page") {
 				opts = opts.WithPage(page)
 			}
 			if perPage > 0 {
@@ -401,10 +401,17 @@ func newMonitorsUpdateCmd(mkAPI func() (*monitorsAPI, error)) *cobra.Command {
 				body.SetMessage(message)
 			}
 			if cmd.Flags().Changed("tags") {
-				rawTags := strings.Split(tagsStr, ",")
-				tags := make([]string, len(rawTags))
-				for i, t := range rawTags {
-					tags[i] = strings.TrimSpace(t)
+				var tags []string
+				if tagsStr != "" {
+					rawTags := strings.Split(tagsStr, ",")
+					tags = make([]string, 0, len(rawTags))
+					for _, t := range rawTags {
+						if trimmed := strings.TrimSpace(t); trimmed != "" {
+							tags = append(tags, trimmed)
+						}
+					}
+				} else {
+					tags = []string{}
 				}
 				body.SetTags(tags)
 			}
