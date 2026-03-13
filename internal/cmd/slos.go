@@ -61,22 +61,19 @@ func parseThresholds(raw string) ([]datadogV1.SLOThreshold, error) {
 }
 
 func sloTableRows(slos []datadogV1.ServiceLevelObjective) ([]string, [][]string) {
-	headers := []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "TAGS"}
+	headers := []string{"ID", "NAME", "TYPE", "THRESHOLDS", "TAGS"}
 	var rows [][]string
 	for _, slo := range slos {
-		target := ""
-		timeframe := ""
-		if ths := slo.GetThresholds(); len(ths) > 0 {
-			th := ths[0]
-			target = strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
-			timeframe = string(th.GetTimeframe())
+		var thParts []string
+		for _, th := range slo.GetThresholds() {
+			part := string(th.GetTimeframe()) + ":" + strconv.FormatFloat(th.GetTarget(), 'f', -1, 64)
+			thParts = append(thParts, part)
 		}
 		rows = append(rows, []string{
 			slo.GetId(),
 			slo.GetName(),
 			string(slo.GetType()),
-			target,
-			timeframe,
+			strings.Join(thParts, ", "),
 			strings.Join(slo.GetTags(), ", "),
 		})
 	}
@@ -273,6 +270,9 @@ func newSLOsHistoryCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			toTs, err := parseUnixOrRelative(toStr)
 			if err != nil {
 				return fmt.Errorf("--to: %w", err)
+			}
+			if fromTs >= toTs {
+				return fmt.Errorf("--from must be before --to")
 			}
 
 			sapi, err := mkAPI()
@@ -487,6 +487,7 @@ func newSLOsUpdateCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 			slo.AdditionalProperties = nil
 			slo.CreatedAt = nil
 			slo.Creator = nil
+			slo.Id = nil
 			slo.ModifiedAt = nil
 			slo.MonitorTags = nil
 			// apply changes

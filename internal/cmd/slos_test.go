@@ -90,7 +90,7 @@ func TestSLOsList_TableOutput(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"ID", "NAME", "TYPE", "TARGET", "TIMEFRAME", "abc123", "API Availability", "metric", "99.9", "30d", "def456", "Login Success", "monitor", "99", "7d"} {
+	for _, want := range []string{"ID", "NAME", "TYPE", "THRESHOLDS", "abc123", "API Availability", "metric", "30d:99.9", "def456", "Login Success", "monitor", "7d:99"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q\nfull output:\n%s", want, out)
 		}
