@@ -182,11 +182,77 @@ func newSLOsShowCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
 	return cmd
 }
 
-func newSLOsHistoryCmd(_ func() (*slosAPI, error)) *cobra.Command {
-	return &cobra.Command{
+func newSLOsHistoryCmd(mkAPI func() (*slosAPI, error)) *cobra.Command {
+	var (
+		id      string
+		fromStr string
+		toStr   string
+	)
+
+	cmd := &cobra.Command{
 		Use:   "history",
 		Short: "Show SLO history",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if id == "" {
+				return fmt.Errorf("--id is required")
+			}
+			fromTs, err := parseUnixOrRelative(fromStr)
+			if err != nil {
+				return fmt.Errorf("--from: %w", err)
+			}
+			toTs, err := parseUnixOrRelative(toStr)
+			if err != nil {
+				return fmt.Errorf("--to: %w", err)
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.GetSLOHistory(sapi.ctx, id, fromTs, toTs)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get SLO history: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			data := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), data)
+			}
+
+			overall := data.GetOverall()
+			sliValue := "N/A"
+			if v, ok := overall.GetSliValueOk(); ok && v != nil {
+				sliValue = strconv.FormatFloat(*v, 'f', 4, 64)
+			}
+
+			headers := []string{"FIELD", "VALUE"}
+			rows := [][]string{
+				{"SLI", sliValue},
+				{"Type", string(data.GetType())},
+			}
+			for tf, budget := range overall.GetErrorBudgetRemaining() {
+				rows = append(rows, []string{
+					"ERROR BUDGET (" + tf + ")",
+					strconv.FormatFloat(budget, 'f', 4, 64) + "%",
+				})
+			}
+			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
+		},
 	}
+
+	cmd.Flags().StringVar(&id, "id", "", "SLO ID")
+	cmd.Flags().StringVar(&fromStr, "from", "", "start time: unix timestamp or relative (e.g. now-7d) (required)")
+	cmd.Flags().StringVar(&toStr, "to", "", "end time: unix timestamp or relative (e.g. now) (required)")
+	return cmd
 }
 
 func newSLOsCreateCmd(_ func() (*slosAPI, error)) *cobra.Command {

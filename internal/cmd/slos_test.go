@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
@@ -275,6 +277,159 @@ func TestSLOsShow_MissingID(t *testing.T) {
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("expected error for missing --id flag")
+	}
+}
+
+func buildSLOsHistoryCmd(mkAPI func() (*slosAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	slos := &cobra.Command{Use: "slos"}
+	slos.AddCommand(newSLOsHistoryCmd(mkAPI))
+	root.AddCommand(slos)
+	return root, buf
+}
+
+const mockSLOHistoryResponse = `{
+	"data": {
+		"from_ts": 1700000000,
+		"to_ts": 1700604800,
+		"type": "metric",
+		"overall": {
+			"sli_value": 99.75,
+			"error_budget_remaining": {"30d": 75.0}
+		},
+		"thresholds": {
+			"30d": {"timeframe": "30d", "target": 99.9}
+		}
+	}
+}`
+
+func TestSLOsHistory_TableOutput(t *testing.T) {
+	t.Parallel()
+	var gotSLOID string
+	var gotFrom, gotTo string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// path: /api/v1/slo/{slo_id}/history
+		parts := strings.Split(r.URL.Path, "/")
+		for i, p := range parts {
+			if p == "slo" && i+2 < len(parts) {
+				gotSLOID = parts[i+1]
+			}
+		}
+		gotFrom = r.URL.Query().Get("from_ts")
+		gotTo = r.URL.Query().Get("to_ts")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOHistoryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsHistoryCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "history", "--id", "abc123", "--from", "1700000000", "--to", "1700604800"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if gotSLOID != "abc123" {
+		t.Errorf("SLO ID = %q, want %q", gotSLOID, "abc123")
+	}
+	if gotFrom != "1700000000" {
+		t.Errorf("from_ts = %q, want %q", gotFrom, "1700000000")
+	}
+	if gotTo != "1700604800" {
+		t.Errorf("to_ts = %q, want %q", gotTo, "1700604800")
+	}
+
+	out := buf.String()
+	for _, want := range []string{"SLI", "99.75", "ERROR BUDGET", "30d", "75"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOsHistory_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOHistoryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSLOsHistoryCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"--json", "slos", "history", "--id", "abc123", "--from", "1700000000", "--to", "1700604800"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{`"sli_value"`, "99.75", `"type"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestSLOsHistory_RelativeTime(t *testing.T) {
+	t.Parallel()
+	var gotFrom, gotTo string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotFrom = r.URL.Query().Get("from_ts")
+		gotTo = r.URL.Query().Get("to_ts")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSLOHistoryResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSLOsHistoryCmd(newTestSLOsAPI(srv))
+	root.SetArgs([]string{"slos", "history", "--id", "abc123", "--from", "now-7d", "--to", "now"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if gotFrom == "" {
+		t.Error("from_ts was not sent")
+	}
+	if gotTo == "" {
+		t.Error("to_ts was not sent")
+	}
+	// from should be roughly 7 days ago (within 60s tolerance)
+	fromUnix, err := strconv.ParseInt(gotFrom, 10, 64)
+	if err != nil {
+		t.Fatalf("from_ts not a unix timestamp: %v", err)
+	}
+	expected := time.Now().Add(-7 * 24 * time.Hour).Unix()
+	diff := fromUnix - expected
+	if diff < -60 || diff > 60 {
+		t.Errorf("from_ts %d not within 60s of expected %d", fromUnix, expected)
+	}
+}
+
+func TestSLOsHistory_MissingFlags(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"missing id", []string{"slos", "history", "--from", "1700000000", "--to", "1700604800"}},
+		{"missing from", []string{"slos", "history", "--id", "abc123", "--to", "1700604800"}},
+		{"missing to", []string{"slos", "history", "--id", "abc123", "--from", "1700000000"}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := buildSLOsHistoryCmd(newTestSLOsAPI(srv))
+			root.SetArgs(tc.args)
+			if err := root.Execute(); err == nil {
+				t.Fatal("expected error for missing flags")
+			}
+		})
 	}
 }
 
