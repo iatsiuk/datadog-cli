@@ -45,12 +45,12 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 0: Deduplicate - verify no overlap with existing commands
 
-- [ ] grep existing `internal/cmd/*.go` for any usage of `CIVisibilityPipelinesApi`, `CIVisibilityTestsApi`, or `CIApp` - must find zero matches
-- [ ] grep existing commands for subcommands named `ci`, `pipeline`, `cicd` - must find zero matches
-- [ ] verify `apm` command does not already expose CI pipeline or CI test events (separate Datadog domain, but confirm)
-- [ ] verify `events` command does not overlap with CI pipeline events (events API is generic EventsApi, CI uses dedicated CIVisibility APIs)
-- [ ] check root.go registration - confirm no command already covers CI visibility scope
-- [ ] document findings: if overlap found, update plan to reuse/extend existing code instead of creating new
+- [x] grep existing `internal/cmd/*.go` for any usage of `CIVisibilityPipelinesApi`, `CIVisibilityTestsApi`, or `CIApp` - must find zero matches
+- [x] grep existing commands for subcommands named `ci`, `pipeline`, `cicd` - must find zero matches
+- [x] verify `apm` command does not already expose CI pipeline or CI test events (separate Datadog domain, but confirm)
+- [x] verify `events` command does not overlap with CI pipeline events (events API is generic EventsApi, CI uses dedicated CIVisibility APIs)
+- [x] check root.go registration - confirm no command already covers CI visibility scope
+- [x] document findings: if overlap found, update plan to reuse/extend existing code instead of creating new
 
 ### Task 1: ci command group and pipeline search subcommand
 
