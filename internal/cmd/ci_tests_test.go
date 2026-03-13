@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -284,15 +285,15 @@ func TestCITestTailFlagQuery(t *testing.T) {
 	t.Parallel()
 
 	var (
-		mu           sync.Mutex
-		capturedReqs []*http.Request
+		mu              sync.Mutex
+		capturedQueries []string
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		capturedReqs = append(capturedReqs, r)
+		capturedQueries = append(capturedQueries, r.URL.RawQuery)
 		callCount++
 		if callCount >= 2 {
 			cancel()
@@ -308,12 +309,13 @@ func TestCITestTailFlagQuery(t *testing.T) {
 	_ = root.Execute()
 
 	mu.Lock()
-	reqs := capturedReqs
+	queries := capturedQueries
 	mu.Unlock()
-	if len(reqs) == 0 {
+	if len(queries) == 0 {
 		t.Fatal("no requests made to mock server")
 	}
-	if got := reqs[0].URL.Query().Get("filter[query]"); got != "test.status:pass" {
+	parsed, _ := url.ParseQuery(queries[0])
+	if got := parsed.Get("filter[query]"); got != "test.status:pass" {
 		t.Errorf("filter[query] = %q, want %q", got, "test.status:pass")
 	}
 }
@@ -511,5 +513,35 @@ func TestCITestAggregateRequiresCompute(t *testing.T) {
 	root.SetArgs([]string{"ci", "test", "aggregate"})
 	if err := root.Execute(); err == nil {
 		t.Error("expected error when --compute is missing")
+	}
+}
+
+func TestCITestSearchInvalidSort(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCITestSearchCmd(newTestTestsAPI(srv))
+	root.SetArgs([]string{"ci", "test", "search", "--sort", "invalid"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for invalid --sort value")
+	}
+}
+
+func TestCITestAggregateInvalidCompute(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":{"buckets":[]}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCITestAggregateCmd(newTestTestsAPI(srv))
+	root.SetArgs([]string{"ci", "test", "aggregate", "--compute", "notafunc"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for invalid --compute aggregation function")
 	}
 }

@@ -165,6 +165,31 @@ Search output columns: `TIMESTAMP | SERVICE | RESOURCE | DURATION | STATUS`
 Time format for `--from` / `--to`: relative (`now`, `now-15m`, `now-1h`, `now-7d`) or RFC3339.
 Default `--from` is `now-15m`, default `--to` is `now`.
 
+### ci
+
+Search and manage Datadog CI Visibility pipeline and test events.
+
+```
+datadog-cli ci pipeline search [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--sort <field>]
+datadog-cli ci pipeline tail [--query <query>]
+datadog-cli ci pipeline aggregate --compute <fn>[:<metric>] [--query <query>] [--from <time>] [--to <time>] [--group-by <facets>]
+datadog-cli ci pipeline create --pipeline-name <name> --status <status> [--level <level>] [--git-branch <branch>] [--git-sha <sha>]
+datadog-cli ci test search [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--sort <field>]
+datadog-cli ci test tail [--query <query>]
+datadog-cli ci test aggregate --compute <fn>[:<metric>] [--query <query>] [--from <time>] [--to <time>] [--group-by <facets>]
+```
+
+Pipeline search output columns: `TIMESTAMP | PIPELINE | STATUS | DURATION | BRANCH`
+Test search output columns: `TIMESTAMP | TEST | SUITE | STATUS | DURATION | SERVICE`
+
+`--sort` accepts: `timestamp`, `-timestamp`
+`--compute` format: `<fn>[:<metric>]` (e.g. `count`, `avg:duration`)
+`--status` for pipeline create: `success`, `error`, `canceled`, `skipped`, `blocked`
+`--level` for pipeline create: `pipeline` (default), `stage`, `job`, `step`
+
+Time format for `--from` / `--to`: relative (`now`, `now-1h`, `now-7d`) or RFC3339.
+Default `--from` is `now-1h`, default `--to` is `now`.
+
 ### rum
 
 Search RUM events, manage applications, metrics, retention filters, session replay, and audiences.

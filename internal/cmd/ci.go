@@ -138,12 +138,7 @@ func newCIPipelineSearchCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command 
 				branch := strAttr(attrs, "git.branch")
 				duration := ""
 				if d, ok := attrs["duration"]; ok {
-					switch v := d.(type) {
-					case float64:
-						duration = (time.Duration(int64(v)) * time.Nanosecond).String()
-					case int64:
-						duration = (time.Duration(v) * time.Nanosecond).String()
-					}
+					duration = fmtCIDuration(d)
 				}
 				rows = append(rows, []string{ts, name, status, duration, branch})
 			}
@@ -225,12 +220,7 @@ func newCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 								branch := strAttr(attrs, "git.branch")
 								duration := ""
 								if d, ok := attrs["duration"]; ok {
-									switch v := d.(type) {
-									case float64:
-										duration = (time.Duration(int64(v)) * time.Nanosecond).String()
-									case int64:
-										duration = (time.Duration(v) * time.Nanosecond).String()
-									}
+									duration = fmtCIDuration(d)
 								}
 								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n",
 									ts, name, status, duration, branch)
@@ -260,10 +250,12 @@ func newCIPipelineTailCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Command {
 					since = to.Add(-ingestionOverlap)
 				}
 
+				timer := time.NewTimer(ciTailPollInterval)
 				select {
 				case <-papi.ctx.Done():
+					timer.Stop()
 					return nil
-				case <-time.After(ciTailPollInterval):
+				case <-timer.C:
 				}
 			}
 		},
@@ -351,7 +343,7 @@ func newCIPipelineAggregateCmd(mkAPI func() (*pipelinesAPI, error)) *cobra.Comma
 				sort.Strings(computeKeys)
 			}
 
-			headers := append(groupHeaders, computeKeys...)
+			headers := append(append([]string(nil), groupHeaders...), computeKeys...)
 			if len(headers) == 0 {
 				headers = []string{"BY", "COMPUTE"}
 			}
@@ -512,6 +504,17 @@ func parseCIComputeSpec(s string) (datadogV2.CIAppAggregationFunction, string, e
 		metric = parts[1]
 	}
 	return *agg, metric, nil
+}
+
+// fmtCIDuration formats a nanosecond duration value from CI event attributes.
+func fmtCIDuration(v interface{}) string {
+	switch d := v.(type) {
+	case float64:
+		return (time.Duration(int64(d)) * time.Nanosecond).String()
+	case int64:
+		return (time.Duration(d) * time.Nanosecond).String()
+	}
+	return ""
 }
 
 // strAttr extracts a string value from a map[string]interface{}.

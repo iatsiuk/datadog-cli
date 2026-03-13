@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -200,6 +201,11 @@ func TestCIPipelineSearchTableOutput(t *testing.T) {
 			t.Errorf("output missing header %q:\n%s", want, out)
 		}
 	}
+	for _, want := range []string{"build-and-test", "success", "main"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing value %q:\n%s", want, out)
+		}
+	}
 }
 
 func TestCIPipelineSearchJSONOutput(t *testing.T) {
@@ -244,15 +250,15 @@ func TestCIPipelineTailFlagQuery(t *testing.T) {
 	t.Parallel()
 
 	var (
-		mu           sync.Mutex
-		capturedReqs []*http.Request
+		mu              sync.Mutex
+		capturedQueries []string
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		capturedReqs = append(capturedReqs, r)
+		capturedQueries = append(capturedQueries, r.URL.RawQuery)
 		callCount++
 		if callCount >= 2 {
 			cancel()
@@ -268,12 +274,13 @@ func TestCIPipelineTailFlagQuery(t *testing.T) {
 	_ = root.Execute()
 
 	mu.Lock()
-	reqs := capturedReqs
+	queries := capturedQueries
 	mu.Unlock()
-	if len(reqs) == 0 {
+	if len(queries) == 0 {
 		t.Fatal("no requests made to mock server")
 	}
-	if got := reqs[0].URL.Query().Get("filter[query]"); got != "ci.status:success" {
+	parsed, _ := url.ParseQuery(queries[0])
+	if got := parsed.Get("filter[query]"); got != "ci.status:success" {
 		t.Errorf("filter[query] = %q, want %q", got, "ci.status:success")
 	}
 }
@@ -665,5 +672,65 @@ func TestCIPipelineCreateRequiresStatus(t *testing.T) {
 	root.SetArgs([]string{"ci", "pipeline", "create", "--pipeline-name", "test"})
 	if err := root.Execute(); err == nil {
 		t.Error("expected error when --status is missing")
+	}
+}
+
+func TestCIPipelineSearchInvalidSort(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":[],"meta":{"status":"done"}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineSearchCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "search", "--sort", "invalid"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for invalid --sort value")
+	}
+}
+
+func TestCIPipelineCreateInvalidStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "create", "--pipeline-name", "test", "--status", "bogus"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for invalid --status value")
+	}
+}
+
+func TestCIPipelineCreateInvalidLevel(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineCreateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "create", "--pipeline-name", "test", "--status", "success", "--level", "bogus"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for invalid --level value")
+	}
+}
+
+func TestCIPipelineAggregateInvalidCompute(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"data":{"buckets":[]}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildCIPipelineAggregateCmd(newTestPipelinesAPI(srv))
+	root.SetArgs([]string{"ci", "pipeline", "aggregate", "--compute", "notafunc"})
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for invalid --compute aggregation function")
 	}
 }

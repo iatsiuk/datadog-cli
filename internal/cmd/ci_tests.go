@@ -123,12 +123,7 @@ func newCITestSearchCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 				service := strAttr(attrs, "service")
 				duration := ""
 				if d, ok := attrs["duration"]; ok {
-					switch v := d.(type) {
-					case float64:
-						duration = (time.Duration(int64(v)) * time.Nanosecond).String()
-					case int64:
-						duration = (time.Duration(v) * time.Nanosecond).String()
-					}
+					duration = fmtCIDuration(d)
 				}
 				rows = append(rows, []string{ts, testName, suite, status, duration, service})
 			}
@@ -211,12 +206,7 @@ func newCITestTailCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 								service := strAttr(attrs, "service")
 								duration := ""
 								if d, ok := attrs["duration"]; ok {
-									switch v := d.(type) {
-									case float64:
-										duration = (time.Duration(int64(v)) * time.Nanosecond).String()
-									case int64:
-										duration = (time.Duration(v) * time.Nanosecond).String()
-									}
+									duration = fmtCIDuration(d)
 								}
 								_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\t%s\n",
 									ts, testName, suite, status, duration, service)
@@ -246,10 +236,12 @@ func newCITestTailCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 					since = to.Add(-ingestionOverlap)
 				}
 
+				timer := time.NewTimer(ciTailPollInterval)
 				select {
 				case <-tapi.ctx.Done():
+					timer.Stop()
 					return nil
-				case <-time.After(ciTailPollInterval):
+				case <-timer.C:
 				}
 			}
 		},
@@ -337,7 +329,7 @@ func newCITestAggregateCmd(mkAPI func() (*testsAPI, error)) *cobra.Command {
 				sort.Strings(computeKeys)
 			}
 
-			headers := append(groupHeaders, computeKeys...)
+			headers := append(append([]string(nil), groupHeaders...), computeKeys...)
 			if len(headers) == 0 {
 				headers = []string{"BY", "COMPUTE"}
 			}
