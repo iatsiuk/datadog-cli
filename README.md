@@ -294,6 +294,43 @@ Totals output columns: `TOTAL_ACTIVE | TOTAL_UP`
 `--end` accepts a Unix timestamp for when the mute expires.
 `--override` allows muting a host that is already muted.
 
+### monitors
+
+Manage Datadog monitors, downtimes, and monitor configuration policies.
+
+```
+datadog-cli monitors list [--name <name>] [--tags <tag,...>] [--page-size <n>]
+datadog-cli monitors show --id <id>
+datadog-cli monitors search [--query <query>] [--page <n>] [--per-page <n>]
+datadog-cli monitors create --name <name> --type <type> --query <query> [--message <text>] [--tags <tag,...>] [--priority <1-5>] [--thresholds <json>]
+datadog-cli monitors update --id <id> [--name <name>] [--query <query>] [--message <text>] [--tags <tag,...>] [--priority <1-5>] [--thresholds <json>]
+datadog-cli monitors delete --id <id> --yes
+datadog-cli monitors mute --id <id> [--scope <scope>] [--end <unix>]
+datadog-cli monitors unmute --id <id> [--scope <scope>]
+datadog-cli monitors downtime list [--current-only]
+datadog-cli monitors downtime show --id <id>
+datadog-cli monitors downtime create --scope <scope> [--monitor-id <id>] [--monitor-tags <tag> ...] [--message <text>] [--start <RFC3339>] [--end <RFC3339>]
+datadog-cli monitors downtime update --id <id> [--scope <scope>] [--message <text>] [--start <RFC3339>] [--end <RFC3339>]
+datadog-cli monitors downtime cancel --id <id> --yes
+datadog-cli monitors policy list
+datadog-cli monitors policy show --id <id>
+datadog-cli monitors policy create --tag-key <key> [--tag-key-required] [--valid-values <val> ...]
+datadog-cli monitors policy update --id <id> [--tag-key <key>] [--tag-key-required] [--valid-values <val> ...]
+datadog-cli monitors policy delete --id <id> --yes
+```
+
+Monitors list output columns: `ID | NAME | TYPE | STATUS | QUERY`
+
+Downtime list output columns: `ID | SCOPE | MONITOR_ID | STATUS | START | END`
+
+Policy list output columns: `ID | POLICY_TYPE | TAG_KEY | TAG_KEY_REQUIRED | VALID_VALUES`
+
+`--type` accepts Datadog monitor types (e.g. `metric alert`, `query alert`, `composite`, `service check`, `event alert`)
+`--thresholds` accepts a JSON object (e.g. `{"critical":90,"warning":80}`)
+`--scope` accepts a Datadog scope expression (e.g. `env:prod`, `*`)
+`--start` / `--end` for downtimes accept RFC3339 timestamps (e.g. `2026-03-13T10:00:00Z`)
+`--priority` accepts 1 (highest) to 5 (lowest)
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
