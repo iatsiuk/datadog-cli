@@ -215,6 +215,10 @@ func newTeamsUpdateCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 		Use:   "update",
 		Short: "Update a team",
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if name == "" && handle == "" && !cmd.Flags().Changed("description") {
+				return fmt.Errorf("at least one of --name, --handle, or --description is required")
+			}
+
 			tapi, err := mkAPI()
 			if err != nil {
 				return err
@@ -246,7 +250,7 @@ func newTeamsUpdateCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 			}
 
 			attrs := datadogV2.NewTeamUpdateAttributes(updHandle, updName)
-			if descChanged || updDescription != "" {
+			if descChanged {
 				attrs.SetDescription(updDescription)
 			}
 			data := datadogV2.NewTeamUpdate(*attrs, datadogV2.TEAMTYPE_TEAM)
@@ -387,7 +391,7 @@ func newTeamsAddMemberCmd(mkAPI func() (*teamsAPI, error)) *cobra.Command {
 			if role != "" {
 				roleVal, rerr := datadogV2.NewUserTeamRoleFromValue(role)
 				if rerr != nil {
-					return fmt.Errorf("invalid role %q: must be 'admin'", role)
+					return fmt.Errorf("invalid role %q: must be 'admin' (omit flag for regular member)", role)
 				}
 				attrs := datadogV2.NewUserTeamAttributes()
 				attrs.SetRole(*roleVal)
