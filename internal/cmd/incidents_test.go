@@ -21,6 +21,10 @@ func newTestIncidentsAPI(srv *httptest.Server) func() (*incidentsAPI, error) {
 		cfg.Debug = false
 		cfg.SetUnstableOperationEnabled("v2.ListIncidents", true)
 		cfg.SetUnstableOperationEnabled("v2.SearchIncidents", true)
+		cfg.SetUnstableOperationEnabled("v2.GetIncident", true)
+		cfg.SetUnstableOperationEnabled("v2.CreateIncident", true)
+		cfg.SetUnstableOperationEnabled("v2.UpdateIncident", true)
+		cfg.SetUnstableOperationEnabled("v2.DeleteIncident", true)
 		c := datadog.NewAPIClient(cfg)
 		apiCtx := context.WithValue(
 			context.Background(),
@@ -205,5 +209,166 @@ func TestIncidentsSearch_MissingQuery(t *testing.T) {
 	err := root.Execute()
 	if err == nil || !strings.Contains(err.Error(), "--query") {
 		t.Fatalf("expected --query error, got: %v", err)
+	}
+}
+
+const mockIncidentSingleResponse = `{
+	"data": {
+		"id": "inc-111",
+		"type": "incidents",
+		"attributes": {
+			"title": "Database outage",
+			"severity": "SEV-1",
+			"state": "active",
+			"created": "2026-03-13T10:00:00Z"
+		},
+		"relationships": {
+			"commander_user": {
+				"data": {"id": "user-abc", "type": "users"}
+			}
+		}
+	}
+}`
+
+func TestIncidentsShow_TableOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockIncidentSingleResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildIncidentsCmd(newTestIncidentsAPI(srv))
+	root.SetArgs([]string{"incidents", "show", "inc-111"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"inc-111", "Database outage", "SEV-1", "active", "user-abc"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestIncidentsShow_JSONOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockIncidentSingleResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildIncidentsCmd(newTestIncidentsAPI(srv))
+	root.SetArgs([]string{"--json", "incidents", "show", "inc-111"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"inc-111", "Database outage"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestIncidentsCreate_TableOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockIncidentSingleResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildIncidentsCmd(newTestIncidentsAPI(srv))
+	root.SetArgs([]string{"incidents", "create", "--title", "Database outage", "--severity", "SEV-1", "--commander", "user-abc"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"inc-111", "Database outage", "SEV-1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+func TestIncidentsCreate_MissingTitle(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildIncidentsCmd(newTestIncidentsAPI(srv))
+	root.SetArgs([]string{"incidents", "create"})
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--title") {
+		t.Fatalf("expected --title error, got: %v", err)
+	}
+}
+
+func TestIncidentsUpdate_TableOutput(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockIncidentSingleResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildIncidentsCmd(newTestIncidentsAPI(srv))
+	root.SetArgs([]string{"incidents", "update", "inc-111", "--title", "Updated title", "--severity", "SEV-2", "--status", "stable"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "inc-111") {
+		t.Errorf("output missing incident ID\nfull output:\n%s", out)
+	}
+}
+
+func TestIncidentsUpdate_NoArgs(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildIncidentsCmd(newTestIncidentsAPI(srv))
+	root.SetArgs([]string{"incidents", "update"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing incident ID, got nil")
+	}
+}
+
+func TestIncidentsDelete_Success(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	root, buf := buildIncidentsCmd(newTestIncidentsAPI(srv))
+	root.SetArgs([]string{"incidents", "delete", "inc-111", "--yes"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(buf.String(), "inc-111") {
+		t.Errorf("expected deletion confirmation, got: %s", buf.String())
+	}
+}
+
+func TestIncidentsDelete_MissingYes(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(nil)
+	defer srv.Close()
+
+	root, _ := buildIncidentsCmd(newTestIncidentsAPI(srv))
+	root.SetArgs([]string{"incidents", "delete", "inc-111"})
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--yes") {
+		t.Fatalf("expected --yes error, got: %v", err)
 	}
 }

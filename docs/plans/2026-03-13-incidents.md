@@ -79,15 +79,15 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV2).
 
 ### Task 2: incidents show, create, update, delete subcommands
 
-- [ ] write tests for `incidents show <id>`: outputs detail view (title, severity, status, timeline, commander, fields)
-- [ ] write tests for `incidents create`: parses --title, --severity (SEV-1..SEV-5), --commander flags
-- [ ] write tests for `incidents update <id>`: parses --title, --severity, --status flags
-- [ ] write tests for `incidents delete <id>`: requires --yes flag
-- [ ] implement `incidents show` using `GetIncident()`
-- [ ] implement `incidents create` using `CreateIncident()`
-- [ ] implement `incidents update` using `UpdateIncident()`
-- [ ] implement `incidents delete` using `DeleteIncident()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `incidents show <id>`: outputs detail view (title, severity, status, timeline, commander, fields)
+- [x] write tests for `incidents create`: parses --title, --severity (SEV-1..SEV-5), --commander flags
+- [x] write tests for `incidents update <id>`: parses --title, --severity, --status flags
+- [x] write tests for `incidents delete <id>`: requires --yes flag
+- [x] implement `incidents show` using `GetIncident()`
+- [x] implement `incidents create` using `CreateIncident()`
+- [x] implement `incidents update` using `UpdateIncident()`
+- [x] implement `incidents delete` using `DeleteIncident()`
+- [x] run tests - must pass before next task
 
 ### Task 3: incidents todo subcommands
 

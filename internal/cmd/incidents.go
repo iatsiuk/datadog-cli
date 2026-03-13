@@ -14,7 +14,11 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
 
-var errIncidentQueryRequired = errors.New("--query is required")
+var (
+	errIncidentQueryRequired = errors.New("--query is required")
+	errIncidentTitleRequired = errors.New("--title is required")
+	errIncidentYesRequired   = errors.New("--yes is required to delete an incident")
+)
 
 type incidentsAPI struct {
 	api *datadogV2.IncidentsApi
@@ -29,6 +33,10 @@ func defaultIncidentsAPI() (*incidentsAPI, error) {
 	ddCfg := datadog.NewConfiguration()
 	ddCfg.SetUnstableOperationEnabled("v2.ListIncidents", true)
 	ddCfg.SetUnstableOperationEnabled("v2.SearchIncidents", true)
+	ddCfg.SetUnstableOperationEnabled("v2.GetIncident", true)
+	ddCfg.SetUnstableOperationEnabled("v2.CreateIncident", true)
+	ddCfg.SetUnstableOperationEnabled("v2.UpdateIncident", true)
+	ddCfg.SetUnstableOperationEnabled("v2.DeleteIncident", true)
 	c, ctx := client.NewWithConfig(ddCfg, cfg)
 	return &incidentsAPI{api: datadogV2.NewIncidentsApi(c), ctx: ctx}, nil
 }
@@ -48,6 +56,10 @@ func NewIncidentsCommand(mkAPI ...func() (*incidentsAPI, error)) *cobra.Command 
 	}
 	cmd.AddCommand(newIncidentsListCmd(mk))
 	cmd.AddCommand(newIncidentsSearchCmd(mk))
+	cmd.AddCommand(newIncidentsShowCmd(mk))
+	cmd.AddCommand(newIncidentsCreateCmd(mk))
+	cmd.AddCommand(newIncidentsUpdateCmd(mk))
+	cmd.AddCommand(newIncidentsDeleteCmd(mk))
 	return cmd
 }
 
@@ -121,6 +133,240 @@ func newIncidentsListCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {
 	}
 
 	cmd.Flags().Int64Var(&pageSize, "page-size", 0, "max number of incidents to return")
+	return cmd
+}
+
+func printIncidentDetail(cmd *cobra.Command, d datadogV2.IncidentResponseData) error {
+	attrs := d.GetAttributes()
+	rows := [][]string{
+		{"ID", d.GetId()},
+		{"TITLE", attrs.GetTitle()},
+		{"SEVERITY", string(attrs.GetSeverity())},
+		{"STATUS", attrs.GetState()},
+	}
+	if t := attrs.GetCreated(); !t.IsZero() {
+		rows = append(rows, []string{"CREATED", t.Format("2006-01-02 15:04:05")})
+	}
+	if t := attrs.GetResolved(); !t.IsZero() {
+		rows = append(rows, []string{"RESOLVED", t.Format("2006-01-02 15:04:05")})
+	}
+	if rel := d.GetRelationships(); rel.CommanderUser.IsSet() {
+		if cu := rel.CommanderUser.Get(); cu != nil {
+			if data := cu.Data.Get(); data != nil {
+				rows = append(rows, []string{"COMMANDER", data.GetId()})
+			}
+		}
+	}
+	return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+}
+
+func newIncidentsShowCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <id>",
+		Short: "Show incident details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			iapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := iapi.api.GetIncident(iapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get incident: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			d := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), d)
+			}
+			return printIncidentDetail(cmd, d)
+		},
+	}
+}
+
+func newIncidentsCreateCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {
+	var (
+		title     string
+		severity  string
+		commander string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "create",
+		Short: "Create an incident",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if title == "" {
+				return errIncidentTitleRequired
+			}
+
+			attrs := datadogV2.NewIncidentCreateAttributes(false, title)
+			if severity != "" {
+				sev := severity
+				f := datadogV2.NewIncidentFieldAttributesSingleValue()
+				f.Value.Set(&sev)
+				attrs.Fields = map[string]datadogV2.IncidentFieldAttributes{
+					"severity": datadogV2.IncidentFieldAttributesSingleValueAsIncidentFieldAttributes(f),
+				}
+			}
+
+			data := datadogV2.NewIncidentCreateData(*attrs, datadogV2.INCIDENTTYPE_INCIDENTS)
+			if commander != "" {
+				userData := datadogV2.NewNullableRelationshipToUserData(commander, datadogV2.USERSTYPE_USERS)
+				var nullableData datadogV2.NullableNullableRelationshipToUserData
+				nullableData.Set(userData)
+				userRel := datadogV2.NewNullableRelationshipToUser(nullableData)
+				var commanderNullable datadogV2.NullableNullableRelationshipToUser
+				commanderNullable.Set(userRel)
+				rels := datadogV2.NewIncidentCreateRelationships(commanderNullable)
+				data.Relationships = rels
+			}
+
+			body := datadogV2.NewIncidentCreateRequest(*data)
+
+			iapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := iapi.api.CreateIncident(iapi.ctx, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("create incident: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			d := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), d)
+			}
+			return printIncidentDetail(cmd, d)
+		},
+	}
+
+	cmd.Flags().StringVar(&title, "title", "", "incident title (required)")
+	cmd.Flags().StringVar(&severity, "severity", "", "severity (SEV-0..SEV-5)")
+	cmd.Flags().StringVar(&commander, "commander", "", "commander user ID")
+	return cmd
+}
+
+func newIncidentsUpdateCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {
+	var (
+		title    string
+		severity string
+		status   string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update an incident",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			incidentID := args[0]
+
+			iapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			attrs := datadogV2.NewIncidentUpdateAttributes()
+			if cmd.Flags().Changed("title") {
+				attrs.SetTitle(title)
+			}
+
+			fields := map[string]datadogV2.IncidentFieldAttributes{}
+			if cmd.Flags().Changed("severity") {
+				sev := severity
+				f := datadogV2.NewIncidentFieldAttributesSingleValue()
+				f.Value.Set(&sev)
+				fields["severity"] = datadogV2.IncidentFieldAttributesSingleValueAsIncidentFieldAttributes(f)
+			}
+			if cmd.Flags().Changed("status") {
+				st := status
+				f := datadogV2.NewIncidentFieldAttributesSingleValue()
+				f.Value.Set(&st)
+				fields["state"] = datadogV2.IncidentFieldAttributesSingleValueAsIncidentFieldAttributes(f)
+			}
+			if len(fields) > 0 {
+				attrs.SetFields(fields)
+			}
+
+			data := datadogV2.NewIncidentUpdateData(incidentID, datadogV2.INCIDENTTYPE_INCIDENTS)
+			data.Attributes = attrs
+			body := datadogV2.NewIncidentUpdateRequest(*data)
+
+			resp, httpResp, err := iapi.api.UpdateIncident(iapi.ctx, incidentID, *body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("update incident: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			d := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), d)
+			}
+			return printIncidentDetail(cmd, d)
+		},
+	}
+
+	cmd.Flags().StringVar(&title, "title", "", "new incident title")
+	cmd.Flags().StringVar(&severity, "severity", "", "new severity (SEV-0..SEV-5)")
+	cmd.Flags().StringVar(&status, "status", "", "new status (active, stable, resolved)")
+	return cmd
+}
+
+func newIncidentsDeleteCmd(mkAPI func() (*incidentsAPI, error)) *cobra.Command {
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete an incident",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return errIncidentYesRequired
+			}
+
+			iapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			httpResp, err := iapi.api.DeleteIncident(iapi.ctx, args[0])
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete incident: %w", err)
+			}
+
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "incident %s deleted\n", args[0])
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
 }
 
