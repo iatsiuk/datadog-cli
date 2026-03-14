@@ -205,6 +205,7 @@ func TestSyntheticsVariableUpdate_Success(t *testing.T) {
 			capturedBody, _ = io.ReadAll(r.Body)
 		}
 		w.Header().Set("Content-Type", "application/json")
+		// GET (fetch current) and PUT (edit) both return the same mock variable
 		fmt.Fprint(w, mockSyntheticsVariableResponse) //nolint:errcheck
 	}))
 	defer srv.Close()
@@ -235,6 +236,49 @@ func TestSyntheticsVariableUpdate_Success(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "API_KEY") {
 		t.Errorf("output missing API_KEY\nfull output:\n%s", out)
+	}
+}
+
+func TestSyntheticsVariableUpdate_PreservesSecure(t *testing.T) {
+	t.Parallel()
+	// current variable has secure=true
+	const secureVarResponse = `{
+		"id": "var-002",
+		"name": "AUTH_TOKEN",
+		"description": "auth token",
+		"tags": ["env:prod"],
+		"value": {"secure": true}
+	}`
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, secureVarResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSyntheticsVariableCmd(newTestSyntheticsAPI(srv))
+	// update only the name; --secure not provided, should remain true
+	root.SetArgs([]string{
+		"synthetics", "variable", "update", "var-002",
+		"--name", "AUTH_TOKEN_NEW",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	valField, ok := body["value"].(map[string]interface{})
+	if !ok {
+		t.Fatal("value field missing in request body")
+	}
+	if valField["secure"] != true {
+		t.Errorf("secure = %v, want true (should be preserved from current)", valField["secure"])
 	}
 }
 

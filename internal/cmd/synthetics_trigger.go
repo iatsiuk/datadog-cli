@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/spf13/cobra"
@@ -21,10 +20,9 @@ func newSyntheticsTriggerCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Comman
 				return errSyntheticsIDFlagRequired
 			}
 
-			publicIDs := strings.Split(ids, ",")
+			publicIDs := splitTrimmed(ids)
 			tests := make([]datadogV1.SyntheticsTriggerTest, 0, len(publicIDs))
 			for _, id := range publicIDs {
-				id = strings.TrimSpace(id)
 				t := datadogV1.NewSyntheticsTriggerTest(id)
 				tests = append(tests, *t)
 			}

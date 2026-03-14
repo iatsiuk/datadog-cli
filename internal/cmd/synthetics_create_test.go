@@ -185,6 +185,26 @@ func TestSyntheticsCreateAPI_MissingLocations(t *testing.T) {
 	}
 }
 
+func TestSyntheticsCreateAPI_NonHTTPRequiresURL(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	root, _ := buildSyntheticsCreateCmd(newTestSyntheticsAPI(srv))
+	root.SetArgs([]string{
+		"synthetics", "create", "api",
+		"--name", "SSL Test",
+		"--type", "ssl",
+		"--locations", "aws:us-east-1",
+	})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error for missing --url with ssl subtype, got nil")
+	}
+}
+
 func TestSyntheticsCreateBrowser_TableOutput(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -45,7 +45,7 @@ func newSyntheticsCreateAPICmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Comm
 			if locations == "" {
 				return errSyntheticsLocationsRequired
 			}
-			if url == "" && (subtype == "" || subtype == "http") {
+			if url == "" {
 				return errSyntheticsURLRequired
 			}
 

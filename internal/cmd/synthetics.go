@@ -54,10 +54,14 @@ func NewSyntheticsCommand() *cobra.Command {
 
 func splitTrimmed(s string) []string {
 	parts := strings.Split(s, ",")
-	for i, p := range parts {
-		parts[i] = strings.TrimSpace(p)
+	result := parts[:0]
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
 	}
-	return parts
+	return result
 }
 
 func synthTestsTableOutput(cmd *cobra.Command, tests []datadogV1.SyntheticsTestDetailsWithoutSteps) error {

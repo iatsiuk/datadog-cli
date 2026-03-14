@@ -226,6 +226,32 @@ func newSyntheticsVariableUpdateCmd(mkAPI func() (*syntheticsAPI, error)) *cobra
 				return err
 			}
 
+			// fetch current variable to preserve unset fields
+			current, httpRespGet, err := sapi.api.GetGlobalVariable(sapi.ctx, varID)
+			if httpRespGet != nil {
+				_ = httpRespGet.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get global variable: %w", err)
+			}
+
+			if !cmd.Flags().Changed("description") {
+				description = current.GetDescription()
+			}
+			if !cmd.Flags().Changed("tags") {
+				tags = strings.Join(current.GetTags(), ",")
+			}
+			if !cmd.Flags().Changed("secure") {
+				if v := current.GetValue(); v.Secure != nil {
+					secure = *v.Secure
+				}
+			}
+			if !cmd.Flags().Changed("value") {
+				if v := current.GetValue(); v.Value != nil {
+					value = *v.Value
+				}
+			}
+
 			tagList := []string{}
 			if tags != "" {
 				tagList = splitTrimmed(tags)
