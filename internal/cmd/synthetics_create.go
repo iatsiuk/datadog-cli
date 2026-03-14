@@ -55,7 +55,7 @@ func newSyntheticsCreateAPICmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Comm
 			if url != "" {
 				req.SetUrl(url)
 			}
-			if subtype == "http" || subtype == "" {
+			if subtype == "http" {
 				req.SetMethod("GET")
 			}
 

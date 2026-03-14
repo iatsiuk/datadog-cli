@@ -217,9 +217,6 @@ func newSyntheticsVariableUpdateCmd(mkAPI func() (*syntheticsAPI, error)) *cobra
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			varID := args[0]
-			if name == "" {
-				return errSyntheticsVariableNameRequired
-			}
 
 			sapi, err := mkAPI()
 			if err != nil {
@@ -235,6 +232,12 @@ func newSyntheticsVariableUpdateCmd(mkAPI func() (*syntheticsAPI, error)) *cobra
 				return fmt.Errorf("get global variable: %w", err)
 			}
 
+			if !cmd.Flags().Changed("name") {
+				name = current.GetName()
+			}
+			if name == "" {
+				return errSyntheticsVariableNameRequired
+			}
 			if !cmd.Flags().Changed("description") {
 				description = current.GetDescription()
 			}

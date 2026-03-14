@@ -305,6 +305,37 @@ func TestSyntheticsVariableDelete_Success(t *testing.T) {
 	}
 }
 
+func TestSyntheticsVariableUpdate_PreservesName(t *testing.T) {
+	t.Parallel()
+	var capturedBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			capturedBody, _ = io.ReadAll(r.Body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSyntheticsVariableResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSyntheticsVariableCmd(newTestSyntheticsAPI(srv))
+	// no --name flag: should fall back to current variable's name
+	root.SetArgs([]string{
+		"synthetics", "variable", "update", "var-001",
+		"--value", "newsecret",
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(capturedBody, &body); err != nil {
+		t.Fatalf("invalid request body: %v", err)
+	}
+	if body["name"] != "API_KEY" {
+		t.Errorf("name = %v, want API_KEY (preserved from current)", body["name"])
+	}
+}
+
 func TestSyntheticsVariableDelete_RequiresYes(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
