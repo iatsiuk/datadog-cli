@@ -92,7 +92,7 @@ func TestSecurityFindingListTableOutput(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"ID", "RULE", "RESOURCE", "STATUS", "SEVERITY", "find-abc123", "S3 Bucket Public Access", "my-s3-bucket", "critical"} {
+	for _, want := range []string{"ID", "RULE", "RESOURCE", "STATUS", "EVALUATION", "find-abc123", "S3 Bucket Public Access", "my-s3-bucket", "critical"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}

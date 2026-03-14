@@ -78,7 +78,7 @@ func newSecurityFindingListCmd(mkAPI func() (*securityAPI, error)) *cobra.Comman
 				return output.PrintJSON(cmd.OutOrStdout(), findings)
 			}
 
-			headers := []string{"ID", "RULE", "RESOURCE", "STATUS", "SEVERITY"}
+			headers := []string{"ID", "RULE", "RESOURCE", "STATUS", "EVALUATION"}
 			rows := make([][]string, 0, len(findings))
 			for _, f := range findings {
 				attrs := f.GetAttributes()
@@ -90,13 +90,12 @@ func newSecurityFindingListCmd(mkAPI func() (*securityAPI, error)) *cobra.Comman
 				if attrs.Status != nil {
 					status = string(*attrs.Status)
 				}
-				severity := status
 				rows = append(rows, []string{
 					f.GetId(),
 					ruleName,
 					attrs.GetResource(),
 					status,
-					severity,
+					findingEvaluationStr(attrs.Evaluation),
 				})
 			}
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)
