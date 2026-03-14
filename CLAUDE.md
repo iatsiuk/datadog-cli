@@ -89,6 +89,15 @@ CLI tool for querying Datadog from the terminal.
 - `datadogV2.IncidentTeamsApi`: ListIncidentTeams, GetIncidentTeam, CreateIncidentTeam, UpdateIncidentTeam, DeleteIncidentTeam
 - Note: All Incidents API operations require unstable operation flags via `ddCfg.SetUnstableOperationEnabled("v2.<OperationName>", true)`
 
+### Security Monitoring
+
+- `datadogV2.SecurityMonitoringApi`: ListSecurityMonitoringSignals, GetSecurityMonitoringSignal, EditSecurityMonitoringSignalState, EditSecurityMonitoringSignalAssignee, EditSecurityMonitoringSignalIncidents
+- `datadogV2.SecurityMonitoringApi`: ListSecurityMonitoringRules, GetSecurityMonitoringRule, CreateSecurityMonitoringRule, UpdateSecurityMonitoringRule, DeleteSecurityMonitoringRule, ValidateSecurityMonitoringRule
+- `datadogV2.SecurityMonitoringApi`: ListSecurityMonitoringSuppressions, GetSecurityMonitoringSuppression, CreateSecurityMonitoringSuppression, UpdateSecurityMonitoringSuppression, DeleteSecurityMonitoringSuppression
+- `datadogV2.SecurityMonitoringApi`: ListSecurityFilters, GetSecurityFilter, CreateSecurityFilter, UpdateSecurityFilter, DeleteSecurityFilter
+- `datadogV2.SecurityMonitoringApi`: ListFindings, GetFinding, MuteFindings
+- Note: Findings operations require unstable operation flags: `cfg.SetUnstableOperationEnabled("v2.ListFindings", true)`, same for `v2.GetFinding` and `v2.MuteFindings`
+
 ## Code Style
 
 ### Imports

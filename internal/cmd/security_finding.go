@@ -81,7 +81,7 @@ func newSecurityFindingListCmd(mkAPI func() (*securityAPI, error)) *cobra.Comman
 					status = string(*attrs.Status)
 				}
 				// severity is derived from status for findings
-				severity := findingSeverity(attrs.Tags)
+				severity := signalTagValue(attrs.Tags, "severity")
 				rows = append(rows, []string{
 					f.GetId(),
 					ruleName,
@@ -213,16 +213,6 @@ func newSecurityFindingMuteCmd(mkAPI func() (*securityAPI, error)) *cobra.Comman
 	cmd.Flags().Int64Var(&expiration, "expiration", 0, "expiration timestamp in Unix ms (0 = indefinite)")
 	_ = cmd.MarkFlagRequired("reason")
 	return cmd
-}
-
-// findingSeverity extracts severity from finding tags.
-func findingSeverity(tags []string) string {
-	for _, tag := range tags {
-		if strings.HasPrefix(tag, "severity:") {
-			return tag[len("severity:"):]
-		}
-	}
-	return ""
 }
 
 // findingEvaluationStr returns the string representation of a FindingEvaluation.

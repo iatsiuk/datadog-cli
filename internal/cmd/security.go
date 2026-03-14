@@ -131,7 +131,7 @@ func newSecuritySignalSearchCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 				return output.PrintJSON(cmd.OutOrStdout(), data)
 			}
 
-			headers := []string{"TIMESTAMP", "ID", "RULE_NAME", "SEVERITY", "STATUS"}
+			headers := []string{"TIMESTAMP", "ID", "RULE_NAME", "SEVERITY", "STATUS", "SOURCE"}
 			var rows [][]string
 			for _, sig := range resp.GetData() {
 				attrs := sig.GetAttributes()
@@ -145,6 +145,7 @@ func newSecuritySignalSearchCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 					signalCustomString(attrs.Custom, "workflow.rule.name"),
 					signalTagValue(attrs.Tags, "severity"),
 					signalCustomString(attrs.Custom, "status"),
+					signalTagValue(attrs.Tags, "source"),
 				})
 			}
 			return output.PrintTable(cmd.OutOrStdout(), headers, rows)

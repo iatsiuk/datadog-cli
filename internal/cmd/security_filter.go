@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -9,8 +8,6 @@ import (
 
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
-
-var errFilterYesRequired = errors.New("--yes is required to delete a filter")
 
 func newSecurityFilterCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
 	cmd := &cobra.Command{
@@ -264,7 +261,7 @@ func newSecurityFilterDeleteCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if !yes {
-				return errFilterYesRequired
+				return errYesRequired
 			}
 
 			sapi, err := mkAPI()

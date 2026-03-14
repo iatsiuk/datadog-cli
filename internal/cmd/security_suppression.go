@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -10,8 +9,6 @@ import (
 
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
-
-var errSuppressionYesRequired = errors.New("--yes is required to delete a suppression")
 
 func newSecuritySuppressionCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
 	cmd := &cobra.Command{
@@ -282,7 +279,7 @@ func newSecuritySuppressionDeleteCmd(mkAPI func() (*securityAPI, error)) *cobra.
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if !yes {
-				return errSuppressionYesRequired
+				return errYesRequired
 			}
 
 			sapi, err := mkAPI()

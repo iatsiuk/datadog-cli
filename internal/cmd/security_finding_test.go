@@ -150,7 +150,7 @@ func TestSecurityFindingListWithQuery(t *testing.T) {
 	mu.Unlock()
 
 	if !strings.Contains(q, "filter%5Btags%5D=env%3Aprod") && !strings.Contains(q, "filter[tags]=env:prod") {
-		t.Logf("query string: %s", q)
+		t.Errorf("filter[tags]=env:prod not found in query string: %s", q)
 	}
 }
 

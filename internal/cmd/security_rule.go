@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -10,8 +9,6 @@ import (
 
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
-
-var errRuleYesRequired = errors.New("--yes is required to delete a rule")
 
 // ruleResponseFields extracts common display fields from the union type.
 func ruleResponseFields(r datadogV2.SecurityMonitoringRuleResponse) (id, name, ruleType string, isEnabled bool, severity string) {
@@ -180,7 +177,7 @@ func newSecurityRuleShowCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
 }
 
 // buildRulePayload builds the common parts of a create/validate payload.
-func buildRulePayload(name, query, message, severity string) (
+func buildRulePayload(query, severity string) (
 	[]datadogV2.SecurityMonitoringRuleCaseCreate,
 	datadogV2.SecurityMonitoringRuleOptions,
 	[]datadogV2.SecurityMonitoringStandardRuleQuery,
@@ -202,8 +199,6 @@ func buildRulePayload(name, query, message, severity string) (
 	q.SetQuery(query)
 	queries := []datadogV2.SecurityMonitoringStandardRuleQuery{*q}
 
-	_ = name
-	_ = message
 	return cases, opts, queries, nil
 }
 
@@ -220,7 +215,7 @@ func newSecurityRuleCreateCmd(mkAPI func() (*securityAPI, error)) *cobra.Command
 		Use:   "create",
 		Short: "Create a security detection rule",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cases, opts, queries, err := buildRulePayload(name, query, message, severity)
+			cases, opts, queries, err := buildRulePayload(query, severity)
 			if err != nil {
 				return err
 			}
@@ -318,7 +313,7 @@ func newSecurityRuleDeleteCmd(mkAPI func() (*securityAPI, error)) *cobra.Command
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if !yes {
-				return errRuleYesRequired
+				return errYesRequired
 			}
 
 			sapi, err := mkAPI()
@@ -354,7 +349,7 @@ func newSecurityRuleValidateCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 		Use:   "validate",
 		Short: "Validate a security detection rule without creating it",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			cases, opts, queries, err := buildRulePayload(name, query, message, severity)
+			cases, opts, queries, err := buildRulePayload(query, severity)
 			if err != nil {
 				return err
 			}

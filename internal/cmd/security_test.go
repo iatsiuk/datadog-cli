@@ -193,8 +193,8 @@ func TestSecuritySignalSearchTableOutput(t *testing.T) {
 
 	out := buf.String()
 	for _, want := range []string{
-		"TIMESTAMP", "ID", "RULE_NAME", "SEVERITY", "STATUS",
-		"signal-abc123", "high", "open", "AWS CloudTrail Rule",
+		"TIMESTAMP", "ID", "RULE_NAME", "SEVERITY", "STATUS", "SOURCE",
+		"signal-abc123", "high", "open", "AWS CloudTrail Rule", "cloudtrail",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
