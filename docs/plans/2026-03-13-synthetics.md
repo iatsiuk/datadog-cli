@@ -134,10 +134,10 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 8: synthetics uptime subcommand
 
-- [ ] write tests for `synthetics uptime`: parses --id (comma-separated), --from, --to flags
-- [ ] write tests for `synthetics uptime`: outputs uptime percentage table
-- [ ] implement `synthetics uptime` using `FetchUptimes()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `synthetics uptime`: parses --id (comma-separated), --from, --to flags
+- [x] write tests for `synthetics uptime`: outputs uptime percentage table
+- [x] implement `synthetics uptime` using `FetchUptimes()`
+- [x] run tests - must pass before next task
 
 ### Task 9: Verify acceptance criteria
 
