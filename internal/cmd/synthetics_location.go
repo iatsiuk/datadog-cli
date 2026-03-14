@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -237,7 +238,19 @@ func newSyntheticsPrivateLocationCreateCmd(mkAPI func() (*syntheticsAPI, error))
 			}
 
 			loc := resp.GetPrivateLocation()
-			return synthPrivateLocationDetailOutput(cmd, loc)
+			if err := synthPrivateLocationDetailOutput(cmd, loc); err != nil {
+				return err
+			}
+			if cfg := resp.GetConfig(); cfg != nil {
+				cfgJSON, err := json.Marshal(cfg)
+				if err != nil {
+					return fmt.Errorf("marshal config: %w", err)
+				}
+				return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, [][]string{
+					{"CONFIG", string(cfgJSON)},
+				})
+			}
+			return nil
 		},
 	}
 

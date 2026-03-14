@@ -11,7 +11,6 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
 
-var errSyntheticsUptimeIDRequired = errors.New("--id is required")
 var errSyntheticsUptimeFromRequired = errors.New("--from is required")
 
 func newSyntheticsUptimeCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command {
@@ -26,7 +25,7 @@ func newSyntheticsUptimeCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command
 		Short: "Fetch uptime for Synthetic tests",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if ids == "" {
-				return errSyntheticsUptimeIDRequired
+				return errSyntheticsIDFlagRequired
 			}
 			if fromStr == "" {
 				return errSyntheticsUptimeFromRequired

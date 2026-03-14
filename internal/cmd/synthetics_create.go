@@ -52,9 +52,7 @@ func newSyntheticsCreateAPICmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Comm
 			locs := splitTrimmed(locations)
 
 			req := datadogV1.NewSyntheticsTestRequest()
-			if url != "" {
-				req.SetUrl(url)
-			}
+			req.SetUrl(url)
 			if subtype == "http" {
 				req.SetMethod("GET")
 			}

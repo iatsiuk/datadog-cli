@@ -195,7 +195,7 @@ func synthBrowserResultFullTable(cmd *cobra.Command, r datadogV1.SyntheticsBrows
 	duration := ""
 	if res := r.Result; res != nil {
 		if res.Duration != nil {
-			duration = fmt.Sprintf("%.1f ms", *res.Duration)
+			duration = fmt.Sprintf("%.1f s", *res.Duration)
 		}
 	}
 	rows := [][]string{
