@@ -370,7 +370,10 @@ func newSecuritySignalSetStateCmd(mkAPI func() (*securityAPI, error)) *cobra.Com
 }
 
 func newSecuritySignalAssignCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
-	var assignee string
+	var (
+		assignee string
+		uuid     string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "assign <signal-id>",
@@ -384,12 +387,12 @@ func newSecuritySignalAssignCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 				return err
 			}
 
-			user := datadogV2.SecurityMonitoringTriageUser{Uuid: ""}
+			user := datadogV2.NewSecurityMonitoringTriageUser(uuid)
 			user.SetHandle(assignee)
 			body := datadogV2.SecurityMonitoringSignalAssigneeUpdateRequest{
 				Data: datadogV2.SecurityMonitoringSignalAssigneeUpdateData{
 					Attributes: datadogV2.SecurityMonitoringSignalAssigneeUpdateAttributes{
-						Assignee: user,
+						Assignee: *user,
 					},
 				},
 			}
@@ -405,6 +408,7 @@ func newSecuritySignalAssignCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 	}
 
 	cmd.Flags().StringVar(&assignee, "assignee", "", "user handle to assign (required)")
+	cmd.Flags().StringVar(&uuid, "uuid", "", "user UUID to assign (optional, use with --assignee)")
 	_ = cmd.MarkFlagRequired("assignee")
 	return cmd
 }

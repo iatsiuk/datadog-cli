@@ -196,6 +196,7 @@ func buildRulePayload(query, severity string) (
 	opts := *datadogV2.NewSecurityMonitoringRuleOptions()
 
 	q := datadogV2.NewSecurityMonitoringStandardRuleQuery()
+	q.SetName("a")
 	q.SetQuery(query)
 	queries := []datadogV2.SecurityMonitoringStandardRuleQuery{*q}
 

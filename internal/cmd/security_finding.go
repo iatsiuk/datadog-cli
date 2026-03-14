@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"crypto/rand"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,15 @@ import (
 
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
+
+// newUUID generates a random UUID v4.
+func newUUID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
 
 func newSecurityFindingCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
 	cmd := &cobra.Command{
@@ -190,7 +200,7 @@ func newSecurityFindingMuteCmd(mkAPI func() (*securityAPI, error)) *cobra.Comman
 			meta.SetFindings([]datadogV2.BulkMuteFindingsRequestMetaFindings{*findingRef})
 
 			attrs := datadogV2.NewBulkMuteFindingsRequestAttributes(*props)
-			data := datadogV2.NewBulkMuteFindingsRequestData(*attrs, findingID, *meta, datadogV2.FINDINGTYPE_FINDING)
+			data := datadogV2.NewBulkMuteFindingsRequestData(*attrs, newUUID(), *meta, datadogV2.FINDINGTYPE_FINDING)
 			body := datadogV2.NewBulkMuteFindingsRequest(*data)
 
 			sapi, err := mkAPI()
