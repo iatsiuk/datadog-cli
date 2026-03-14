@@ -245,6 +245,10 @@ func newSecuritySignalTailCmd(mkAPI func() (*securityAPI, error)) *cobra.Command
 				}()
 
 				if apiErr != nil {
+					// merge already-printed signals into currSeen to avoid reprinting on retry
+					for id := range nextSeen {
+						currSeen[id] = struct{}{}
+					}
 					if errors.Is(apiErr, context.Canceled) || errors.Is(apiErr, context.DeadlineExceeded) {
 						return nil
 					}
@@ -419,7 +423,7 @@ func newSecuritySignalAddIncidentCmd(mkAPI func() (*securityAPI, error)) *cobra.
 
 	cmd := &cobra.Command{
 		Use:   "add-incident <signal-id>",
-		Short: "Link a security signal to an incident",
+		Short: "Set linked incidents for a security signal (replaces existing)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			signalID := args[0]
