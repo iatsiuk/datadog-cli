@@ -58,11 +58,11 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 0: Deduplicate - verify no overlap with existing commands
 
-- [ ] grep existing `internal/cmd/*.go` for any usage of `datadogV1.SyntheticsApi` or `SyntheticsApi` - must find zero matches
-- [ ] grep existing commands for subcommands named `synthetics`, `synthetic`, `synth` - must find zero matches
-- [ ] verify no existing command exposes test triggering, global variables, or private locations under different names (e.g., check `monitors`, `apm` for overlapping concepts)
-- [ ] check root.go registration - confirm no command already covers synthetics scope
-- [ ] document findings: if overlap found, update plan to reuse/extend existing code instead of creating new
+- [x] grep existing `internal/cmd/*.go` for any usage of `datadogV1.SyntheticsApi` or `SyntheticsApi` - must find zero matches
+- [x] grep existing commands for subcommands named `synthetics`, `synthetic`, `synth` - must find zero matches
+- [x] verify no existing command exposes test triggering, global variables, or private locations under different names (e.g., check `monitors`, `apm` for overlapping concepts)
+- [x] check root.go registration - confirm no command already covers synthetics scope
+- [x] document findings: if overlap found, update plan to reuse/extend existing code instead of creating new
 
 ### Task 1: synthetics command group and test list/search subcommands
 
