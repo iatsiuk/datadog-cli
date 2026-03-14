@@ -42,6 +42,9 @@ func newTestSecurityAPIWithCtx(srv *httptest.Server, ctx context.Context) func()
 		cfg := datadog.NewConfiguration()
 		cfg.Servers = datadog.ServerConfigurations{{URL: srv.URL}}
 		cfg.Debug = false
+		cfg.SetUnstableOperationEnabled("v2.ListFindings", true)
+		cfg.SetUnstableOperationEnabled("v2.GetFinding", true)
+		cfg.SetUnstableOperationEnabled("v2.MuteFindings", true)
 		c := datadog.NewAPIClient(cfg)
 		apiCtx := context.WithValue(
 			ctx,

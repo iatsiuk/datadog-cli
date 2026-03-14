@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/spf13/cobra"
 
@@ -27,7 +28,11 @@ func defaultSecurityAPI() (*securityAPI, error) {
 	if err != nil {
 		return nil, err
 	}
-	c, ctx := client.New(cfg)
+	ddCfg := datadog.NewConfiguration()
+	ddCfg.SetUnstableOperationEnabled("v2.ListFindings", true)
+	ddCfg.SetUnstableOperationEnabled("v2.GetFinding", true)
+	ddCfg.SetUnstableOperationEnabled("v2.MuteFindings", true)
+	c, ctx := client.NewWithConfig(ddCfg, cfg)
 	return &securityAPI{api: datadogV2.NewSecurityMonitoringApi(c), ctx: ctx}, nil
 }
 
@@ -51,6 +56,7 @@ func NewSecurityCommand() *cobra.Command {
 	cmd.AddCommand(newSecurityRuleCmd(defaultSecurityAPI))
 	cmd.AddCommand(newSecuritySuppressionCmd(defaultSecurityAPI))
 	cmd.AddCommand(newSecurityFilterCmd(defaultSecurityAPI))
+	cmd.AddCommand(newSecurityFindingCmd(defaultSecurityAPI))
 	return cmd
 }
 
