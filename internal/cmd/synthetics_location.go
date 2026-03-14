@@ -35,7 +35,11 @@ func newSyntheticsPrivateLocationCmd(mkAPI func() (*syntheticsAPI, error)) *cobr
 }
 
 // extractRegion derives region from a location ID like "aws:us-east-1".
+// returns empty string for private locations (pl: prefix) as their suffix is not a region.
 func extractRegion(id string) string {
+	if isPrivateLocation(id) {
+		return ""
+	}
 	parts := strings.SplitN(id, ":", 2)
 	if len(parts) == 2 {
 		return parts[1]

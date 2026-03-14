@@ -41,6 +41,9 @@ func newSyntheticsResultsCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Comman
 			}
 
 			testType := summary.GetType()
+			if testType == datadogV1.SYNTHETICSTESTDETAILSTYPE_MOBILE {
+				return fmt.Errorf("results not supported for mobile tests")
+			}
 			isBrowser := testType == datadogV1.SYNTHETICSTESTDETAILSTYPE_BROWSER
 
 			if resultID != "" {
