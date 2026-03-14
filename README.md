@@ -498,7 +498,7 @@ datadog-cli security signal search [--query <query>] [--from <time>] [--to <time
 datadog-cli security signal tail [--query <query>]
 datadog-cli security signal show <id>
 datadog-cli security signal set-state <id> --state <open|archived|under_review>
-datadog-cli security signal assign <id> --assignee <handle>
+datadog-cli security signal assign <id> --assignee <handle> --uuid <uuid>
 datadog-cli security signal add-incident <id> --incident-id <id>
 
 datadog-cli security rule list [--page-size <n>]
@@ -520,7 +520,7 @@ datadog-cli security filter create --name <name> --query <query> [--filtered-dat
 datadog-cli security filter update <id> [--name <name>] [--query <query>] [--filtered-data-type <logs|spans>] [--is-enabled]
 datadog-cli security filter delete <id> --yes
 
-datadog-cli security finding list [--query <query>] [--limit <n>]
+datadog-cli security finding list [--tags <tags>] [--limit <n>]
 datadog-cli security finding show <id>
 datadog-cli security finding mute <id> --reason <reason> [--expiration <unix-ms>]
 ```
@@ -533,7 +533,7 @@ Suppression list output columns: `ID | NAME | RULE_QUERY | ENABLED | EXPIRATION`
 
 Filter list output columns: `ID | NAME | QUERY | IS_ENABLED | FILTERED_DATA_TYPE`
 
-Finding list output columns: `ID | RULE | RESOURCE | STATUS | SEVERITY`
+Finding list output columns: `ID | RULE | RESOURCE | STATUS | EVALUATION`
 
 `--severity` for rules accepts: `info`, `low`, `medium`, `high`, `critical`
 
