@@ -14,7 +14,6 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
 
-var errSyntheticsPublicIDRequired = errors.New("public-id argument is required")
 var errSyntheticsIDFlagRequired = errors.New("--id is required")
 var errSyntheticsYesRequired = errors.New("--yes is required to confirm destructive action")
 
@@ -51,6 +50,14 @@ func NewSyntheticsCommand() *cobra.Command {
 	cmd.AddCommand(newSyntheticsPrivateLocationCmd(defaultSyntheticsAPI))
 	cmd.AddCommand(newSyntheticsUptimeCmd(defaultSyntheticsAPI))
 	return cmd
+}
+
+func splitTrimmed(s string) []string {
+	parts := strings.Split(s, ",")
+	for i, p := range parts {
+		parts[i] = strings.TrimSpace(p)
+	}
+	return parts
 }
 
 func synthTestsTableOutput(cmd *cobra.Command, tests []datadogV1.SyntheticsTestDetailsWithoutSteps) error {
@@ -170,9 +177,6 @@ func newSyntheticsShowCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			publicID := args[0]
-			if publicID == "" {
-				return errSyntheticsPublicIDRequired
-			}
 
 			sapi, err := mkAPI()
 			if err != nil {
@@ -292,10 +296,7 @@ func newSyntheticsDeleteCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command
 				return errSyntheticsYesRequired
 			}
 
-			publicIDs := strings.Split(ids, ",")
-			for i, id := range publicIDs {
-				publicIDs[i] = strings.TrimSpace(id)
-			}
+			publicIDs := splitTrimmed(ids)
 
 			sapi, err := mkAPI()
 			if err != nil {

@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
@@ -33,10 +32,7 @@ func newSyntheticsUptimeCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command
 				return errSyntheticsUptimeFromRequired
 			}
 
-			publicIDs := strings.Split(ids, ",")
-			for i, id := range publicIDs {
-				publicIDs[i] = strings.TrimSpace(id)
-			}
+			publicIDs := splitTrimmed(ids)
 
 			fromTime, err := parseRelativeTime(fromStr)
 			if err != nil {

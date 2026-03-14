@@ -67,6 +67,17 @@ CLI tool for querying Datadog from the terminal.
 - `datadogV1.ServiceLevelObjectivesApi`: ListSLOs, GetSLO, CreateSLO, UpdateSLO, DeleteSLO, CheckCanDeleteSLO, GetSLOHistory
 - `datadogV1.ServiceLevelObjectiveCorrectionsApi`: ListSLOCorrection, GetSLOCorrection, CreateSLOCorrection, UpdateSLOCorrection, DeleteSLOCorrection
 
+### Synthetics
+
+- `datadogV1.SyntheticsApi`: ListTests, SearchTests, GetTest, GetAPITest, GetBrowserTest, GetMobileTest
+- `datadogV1.SyntheticsApi`: CreateSyntheticsAPITest, CreateSyntheticsBrowserTest, DeleteTests
+- `datadogV1.SyntheticsApi`: GetAPITestLatestResults, GetAPITestResult, GetBrowserTestLatestResults, GetBrowserTestResult
+- `datadogV1.SyntheticsApi`: TriggerTests, GetSyntheticsCIBatch
+- `datadogV1.SyntheticsApi`: ListGlobalVariables, GetGlobalVariable, CreateGlobalVariable, EditGlobalVariable, DeleteGlobalVariable
+- `datadogV1.SyntheticsApi`: ListLocations, GetSyntheticsDefaultLocations, GetPrivateLocation, CreatePrivateLocation, DeletePrivateLocation
+- `datadogV1.SyntheticsApi`: FetchUptimes
+- Note: SyntheticsApi is in datadogV1, not datadogV2
+
 ### Users
 
 - `datadogV2.UsersApi`: ListUsers, GetUser, CreateUser, UpdateUser, DisableUser, SendInvitations

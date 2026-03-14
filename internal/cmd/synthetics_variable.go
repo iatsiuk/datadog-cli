@@ -11,7 +11,6 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
 
-var errSyntheticsVariableIDRequired = errors.New("variable ID argument is required")
 var errSyntheticsVariableNameRequired = errors.New("--name is required")
 
 func newSyntheticsVariableCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command {
@@ -91,9 +90,6 @@ func newSyntheticsVariableShowCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.C
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			varID := args[0]
-			if varID == "" {
-				return errSyntheticsVariableIDRequired
-			}
 
 			sapi, err := mkAPI()
 			if err != nil {
@@ -164,13 +160,9 @@ func newSyntheticsVariableCreateCmd(mkAPI func() (*syntheticsAPI, error)) *cobra
 				return err
 			}
 
-			var tagList []string
+			tagList := []string{}
 			if tags != "" {
-				for _, t := range strings.Split(tags, ",") {
-					tagList = append(tagList, strings.TrimSpace(t))
-				}
-			} else {
-				tagList = []string{}
+				tagList = splitTrimmed(tags)
 			}
 
 			req := datadogV1.NewSyntheticsGlobalVariableRequest(description, name, tagList)
@@ -225,19 +217,18 @@ func newSyntheticsVariableUpdateCmd(mkAPI func() (*syntheticsAPI, error)) *cobra
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			varID := args[0]
+			if name == "" {
+				return errSyntheticsVariableNameRequired
+			}
 
 			sapi, err := mkAPI()
 			if err != nil {
 				return err
 			}
 
-			var tagList []string
+			tagList := []string{}
 			if tags != "" {
-				for _, t := range strings.Split(tags, ",") {
-					tagList = append(tagList, strings.TrimSpace(t))
-				}
-			} else {
-				tagList = []string{}
+				tagList = splitTrimmed(tags)
 			}
 
 			req := datadogV1.NewSyntheticsGlobalVariableRequest(description, name, tagList)

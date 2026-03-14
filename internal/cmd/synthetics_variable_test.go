@@ -225,6 +225,12 @@ func TestSyntheticsVariableUpdate_Success(t *testing.T) {
 	if err := json.Unmarshal(capturedBody, &body); err != nil {
 		t.Fatalf("invalid request body: %v", err)
 	}
+	if body["name"] != "API_KEY" {
+		t.Errorf("body name = %v, want API_KEY", body["name"])
+	}
+	if body["description"] != "updated desc" {
+		t.Errorf("body description = %v, want 'updated desc'", body["description"])
+	}
 
 	out := buf.String()
 	if !strings.Contains(out, "API_KEY") {

@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV1"
 	"github.com/spf13/cobra"
@@ -46,19 +45,18 @@ func newSyntheticsCreateAPICmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Comm
 			if locations == "" {
 				return errSyntheticsLocationsRequired
 			}
-
-			locs := strings.Split(locations, ",")
-			for i, l := range locs {
-				locs[i] = strings.TrimSpace(l)
+			if url == "" && (subtype == "" || subtype == "http") {
+				return errSyntheticsURLRequired
 			}
+
+			locs := splitTrimmed(locations)
 
 			req := datadogV1.NewSyntheticsTestRequest()
 			if url != "" {
 				req.SetUrl(url)
 			}
 			if subtype == "http" || subtype == "" {
-				method := "GET"
-				req.SetMethod(method)
+				req.SetMethod("GET")
 			}
 
 			cfg := datadogV1.NewSyntheticsAPITestConfig()
@@ -95,11 +93,7 @@ func newSyntheticsCreateAPICmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Comm
 			}
 
 			if tags != "" {
-				tagList := strings.Split(tags, ",")
-				for i, tg := range tagList {
-					tagList[i] = strings.TrimSpace(tg)
-				}
-				test.SetTags(tagList)
+				test.SetTags(splitTrimmed(tags))
 			}
 
 			sapi, err := mkAPI()
@@ -159,10 +153,7 @@ func newSyntheticsCreateBrowserCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.
 				return errSyntheticsLocationsRequired
 			}
 
-			locs := strings.Split(locations, ",")
-			for i, l := range locs {
-				locs[i] = strings.TrimSpace(l)
-			}
+			locs := splitTrimmed(locations)
 
 			req := datadogV1.NewSyntheticsTestRequest()
 			req.SetUrl(url)
@@ -187,11 +178,7 @@ func newSyntheticsCreateBrowserCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.
 			)
 
 			if tags != "" {
-				tagList := strings.Split(tags, ",")
-				for i, tg := range tagList {
-					tagList[i] = strings.TrimSpace(tg)
-				}
-				test.SetTags(tagList)
+				test.SetTags(splitTrimmed(tags))
 			}
 
 			sapi, err := mkAPI()

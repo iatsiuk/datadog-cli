@@ -12,7 +12,6 @@ import (
 )
 
 var errSyntheticsLocationNameRequired = errors.New("--name is required")
-var errSyntheticsLocationIDRequired = errors.New("location ID argument is required")
 
 func newSyntheticsLocationCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command {
 	cmd := &cobra.Command{
@@ -150,9 +149,6 @@ func newSyntheticsPrivateLocationShowCmd(mkAPI func() (*syntheticsAPI, error)) *
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			locID := args[0]
-			if locID == "" {
-				return errSyntheticsLocationIDRequired
-			}
 
 			sapi, err := mkAPI()
 			if err != nil {
@@ -212,13 +208,9 @@ func newSyntheticsPrivateLocationCreateCmd(mkAPI func() (*syntheticsAPI, error))
 				return err
 			}
 
-			var tagList []string
+			tagList := []string{}
 			if tags != "" {
-				for _, t := range strings.Split(tags, ",") {
-					tagList = append(tagList, strings.TrimSpace(t))
-				}
-			} else {
-				tagList = []string{}
+				tagList = splitTrimmed(tags)
 			}
 
 			body := datadogV1.NewSyntheticsPrivateLocation(description, name, tagList)

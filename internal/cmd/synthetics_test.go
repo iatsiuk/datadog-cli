@@ -209,6 +209,17 @@ func TestNewSyntheticsCommand_Subcommands(t *testing.T) {
 	if cmd.Use != "synthetics" {
 		t.Errorf("Use = %q, want %q", cmd.Use, "synthetics")
 	}
+
+	want := []string{"list", "search", "show", "delete", "create", "results", "trigger", "batch", "variable", "location", "private-location", "uptime"}
+	got := make(map[string]bool)
+	for _, sub := range cmd.Commands() {
+		got[sub.Name()] = true
+	}
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("subcommand %q not registered", name)
+		}
+	}
 }
 
 const mockSyntheticsAPITestResponse = `{
