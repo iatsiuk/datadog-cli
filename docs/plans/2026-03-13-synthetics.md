@@ -124,13 +124,13 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 7: synthetics location subcommands
 
-- [ ] write tests for `synthetics location list`: outputs table (id, name, region, is_private)
-- [ ] write tests for `synthetics location defaults`: outputs default locations list
-- [ ] write tests for `synthetics private-location show <id>`: outputs detail view
-- [ ] write tests for `synthetics private-location create`: parses --name, --tags flags
-- [ ] write tests for `synthetics private-location delete <id>`: requires --yes flag
-- [ ] implement location commands in `synthetics_location.go`
-- [ ] run tests - must pass before next task
+- [x] write tests for `synthetics location list`: outputs table (id, name, region, is_private)
+- [x] write tests for `synthetics location defaults`: outputs default locations list
+- [x] write tests for `synthetics private-location show <id>`: outputs detail view
+- [x] write tests for `synthetics private-location create`: parses --name, --tags flags
+- [x] write tests for `synthetics private-location delete <id>`: requires --yes flag
+- [x] implement location commands in `synthetics_location.go`
+- [x] run tests - must pass before next task
 
 ### Task 8: synthetics uptime subcommand
 
