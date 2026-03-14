@@ -90,8 +90,7 @@ func newSecurityFindingListCmd(mkAPI func() (*securityAPI, error)) *cobra.Comman
 				if attrs.Status != nil {
 					status = string(*attrs.Status)
 				}
-				// severity is derived from status for findings
-				severity := signalTagValue(attrs.Tags, "severity")
+				severity := status
 				rows = append(rows, []string{
 					f.GetId(),
 					ruleName,

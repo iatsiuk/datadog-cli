@@ -225,6 +225,10 @@ func newSecurityRuleCreateCmd(mkAPI func() (*securityAPI, error)) *cobra.Command
 		Use:   "create",
 		Short: "Create a security detection rule",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if ruleType == "signal_correlation" {
+				return fmt.Errorf("--type signal_correlation requires a different query schema; use signal_correlation type via the API directly")
+			}
+
 			cases, opts, queries, err := buildRulePayload(query, severity)
 			if err != nil {
 				return err
@@ -359,6 +363,10 @@ func newSecurityRuleValidateCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 		Use:   "validate",
 		Short: "Validate a security detection rule without creating it",
 		RunE: func(_ *cobra.Command, _ []string) error {
+			if ruleType == "signal_correlation" {
+				return fmt.Errorf("--type signal_correlation requires a different query schema; use signal_correlation type via the API directly")
+			}
+
 			cases, opts, queries, err := buildRulePayload(query, severity)
 			if err != nil {
 				return err
