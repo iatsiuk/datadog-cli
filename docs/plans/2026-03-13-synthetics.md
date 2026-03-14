@@ -96,12 +96,12 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 4: synthetics results subcommands
 
-- [ ] write tests for `synthetics results <public-id>`: outputs latest results table (timestamp, location, status, duration)
-- [ ] write tests for `synthetics results <public-id> --result-id <id>`: outputs single result detail
-- [ ] write tests for results: handles both API and browser test types
-- [ ] implement `synthetics results` in `synthetics_results.go` using `GetAPITestLatestResults()` / `GetBrowserTestLatestResults()`
-- [ ] implement `synthetics results --result-id` using `GetAPITestResult()` / `GetBrowserTestResult()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `synthetics results <public-id>`: outputs latest results table (timestamp, location, status, duration)
+- [x] write tests for `synthetics results <public-id> --result-id <id>`: outputs single result detail
+- [x] write tests for results: handles both API and browser test types
+- [x] implement `synthetics results` in `synthetics_results.go` using `GetAPITestLatestResults()` / `GetBrowserTestLatestResults()`
+- [x] implement `synthetics results --result-id` using `GetAPITestResult()` / `GetBrowserTestResult()`
+- [x] run tests - must pass before next task
 
 ### Task 5: synthetics trigger and batch subcommands
 
