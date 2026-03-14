@@ -66,15 +66,15 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 1: synthetics command group and test list/search subcommands
 
-- [ ] write tests for `synthetics list`: outputs table (public_id, name, type, status, locations)
-- [ ] write tests for `synthetics list`: supports --page-size flag
-- [ ] write tests for `synthetics list`: outputs JSON with --json flag
-- [ ] write tests for `synthetics search`: parses --query flag, outputs same table format
-- [ ] implement `internal/cmd/synthetics.go` with `NewSyntheticsCommand()`, syntheticsAPI type
-- [ ] implement `synthetics list` using `ListTests()`
-- [ ] implement `synthetics search` using `SearchTests()`
-- [ ] register `synthetics` command in root.go
-- [ ] run tests - must pass before next task
+- [x] write tests for `synthetics list`: outputs table (public_id, name, type, status, locations)
+- [x] write tests for `synthetics list`: supports --page-size flag
+- [x] write tests for `synthetics list`: outputs JSON with --json flag
+- [x] write tests for `synthetics search`: parses --query flag, outputs same table format
+- [x] implement `internal/cmd/synthetics.go` with `NewSyntheticsCommand()`, syntheticsAPI type
+- [x] implement `synthetics list` using `ListTests()`
+- [x] implement `synthetics search` using `SearchTests()`
+- [x] register `synthetics` command in root.go
+- [x] run tests - must pass before next task
 
 ### Task 2: synthetics show and delete subcommands
 
