@@ -483,7 +483,7 @@ func TestSecuritySignalAssign(t *testing.T) {
 	defer srv.Close()
 
 	root, _ := buildSignalTriageCmd(newTestSecurityAPI(srv))
-	root.SetArgs([]string{"security", "signal", "assign", "signal-abc123", "--assignee", "user@example.com"})
+	root.SetArgs([]string{"security", "signal", "assign", "signal-abc123", "--assignee", "user@example.com", "--uuid", "00000000-0000-0000-0000-000000000001"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

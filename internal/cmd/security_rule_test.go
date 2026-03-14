@@ -77,7 +77,7 @@ func TestSecurityRuleListTableOutput(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"ID", "NAME", "TYPE", "ENABLED", "SEVERITY", "rule-abc123", "AWS CloudTrail Rule", "log_detection", "true", "high"} {
+	for _, want := range []string{"ID", "NAME", "TYPE", "IS_ENABLED", "SEVERITY", "rule-abc123", "AWS CloudTrail Rule", "log_detection", "true", "high"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}

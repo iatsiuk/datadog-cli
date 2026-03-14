@@ -382,6 +382,10 @@ func newSecuritySignalAssignCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 		RunE: func(_ *cobra.Command, args []string) error {
 			signalID := args[0]
 
+			if uuid == "" {
+				return fmt.Errorf("--uuid is required")
+			}
+
 			sapi, err := mkAPI()
 			if err != nil {
 				return err
@@ -408,7 +412,7 @@ func newSecuritySignalAssignCmd(mkAPI func() (*securityAPI, error)) *cobra.Comma
 	}
 
 	cmd.Flags().StringVar(&assignee, "assignee", "", "user handle to assign (required)")
-	cmd.Flags().StringVar(&uuid, "uuid", "", "user UUID to assign (optional, use with --assignee)")
+	cmd.Flags().StringVar(&uuid, "uuid", "", "user UUID to assign (required)")
 	_ = cmd.MarkFlagRequired("assignee")
 	return cmd
 }

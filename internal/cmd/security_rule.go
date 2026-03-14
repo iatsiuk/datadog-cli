@@ -92,7 +92,7 @@ func newSecurityRuleListCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
 				return output.PrintJSON(cmd.OutOrStdout(), rules)
 			}
 
-			headers := []string{"ID", "NAME", "TYPE", "ENABLED", "SEVERITY"}
+			headers := []string{"ID", "NAME", "TYPE", "IS_ENABLED", "SEVERITY"}
 			rows := make([][]string, 0, len(rules))
 			for _, r := range rules {
 				id, name, ruleType, isEnabled, severity := ruleResponseFields(r)

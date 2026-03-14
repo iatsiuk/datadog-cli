@@ -53,7 +53,7 @@ func newSecurityFilterListCmd(mkAPI func() (*securityAPI, error)) *cobra.Command
 				return output.PrintJSON(cmd.OutOrStdout(), filters)
 			}
 
-			headers := []string{"ID", "NAME", "QUERY", "ENABLED", "TYPE"}
+			headers := []string{"ID", "NAME", "QUERY", "IS_ENABLED", "FILTERED_DATA_TYPE"}
 			rows := make([][]string, 0, len(filters))
 			for _, f := range filters {
 				attrs := f.GetAttributes()

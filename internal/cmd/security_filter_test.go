@@ -90,7 +90,7 @@ func TestSecurityFilterListTableOutput(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"ID", "NAME", "QUERY", "ENABLED", "TYPE", "flt-abc123", "Exclude staging", "env:staging", "true", "logs"} {
+	for _, want := range []string{"ID", "NAME", "QUERY", "IS_ENABLED", "FILTERED_DATA_TYPE", "flt-abc123", "Exclude staging", "env:staging", "true", "logs"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
