@@ -224,11 +224,12 @@ func newSecuritySignalTailCmd(mkAPI func() (*securityAPI, error)) *cobra.Command
 							if t := attrs.Timestamp; t != nil {
 								ts = t.UTC().Format(time.RFC3339)
 							}
-							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n",
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\t%s\n",
 								ts, id,
 								signalCustomString(attrs.Custom, "workflow.rule.name"),
 								signalTagValue(attrs.Tags, "severity"),
 								signalCustomString(attrs.Custom, "status"),
+								signalTagValue(attrs.Tags, "source"),
 							)
 						}
 						cursor := ""
@@ -427,6 +428,10 @@ func newSecuritySignalAddIncidentCmd(mkAPI func() (*securityAPI, error)) *cobra.
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			signalID := args[0]
+
+			if incidentID <= 0 {
+				return fmt.Errorf("--incident-id must be a positive integer")
+			}
 
 			sapi, err := mkAPI()
 			if err != nil {
