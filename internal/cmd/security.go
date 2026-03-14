@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,8 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/config"
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
+
+const securityTailPollInterval = 5 * time.Second
 
 type securityAPI struct {
 	api *datadogV2.SecurityMonitoringApi
@@ -39,6 +42,8 @@ func NewSecurityCommand() *cobra.Command {
 		Short: "Manage security signals",
 	}
 	sig.AddCommand(newSecuritySignalSearchCmd(defaultSecurityAPI))
+	sig.AddCommand(newSecuritySignalTailCmd(defaultSecurityAPI))
+	sig.AddCommand(newSecuritySignalShowCmd(defaultSecurityAPI))
 	cmd.AddCommand(sig)
 	return cmd
 }
@@ -148,6 +153,164 @@ func signalCustomString(custom map[string]interface{}, key string) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return ""
+}
+
+func newSecuritySignalTailCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
+	var query string
+
+	cmd := &cobra.Command{
+		Use:   "tail",
+		Short: "Tail security signals in real time",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			const ingestionOverlap = 30 * time.Second
+			since := time.Now()
+			var prevSeen map[string]struct{}
+			currSeen := map[string]struct{}{}
+
+			for {
+				to := time.Now()
+				baseOpts := datadogV2.NewListSecurityMonitoringSignalsOptionalParameters().
+					WithFilterFrom(since).
+					WithFilterTo(to).
+					WithSort(datadogV2.SECURITYMONITORINGSIGNALSSORT_TIMESTAMP_ASCENDING).
+					WithPageLimit(1000)
+				if query != "" {
+					baseOpts = baseOpts.WithFilterQuery(query)
+				}
+
+				nextSeen := map[string]struct{}{}
+				opts := *baseOpts
+				apiErr := func() error {
+					for {
+						resp, httpResp, innerErr := sapi.api.ListSecurityMonitoringSignals(sapi.ctx, opts)
+						if httpResp != nil {
+							_ = httpResp.Body.Close()
+						}
+						if innerErr != nil {
+							return innerErr
+						}
+						for _, sig := range resp.GetData() {
+							id := sig.GetId()
+							if id == "" {
+								continue
+							}
+							nextSeen[id] = struct{}{}
+							if _, inPrev := prevSeen[id]; inPrev {
+								continue
+							}
+							if _, inCurr := currSeen[id]; inCurr {
+								continue
+							}
+							attrs := sig.GetAttributes()
+							ts := ""
+							if t := attrs.Timestamp; t != nil {
+								ts = t.UTC().Format(time.RFC3339)
+							}
+							_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\t%s\n",
+								ts, id,
+								signalCustomString(attrs.Custom, "workflow.rule.name"),
+								signalTagValue(attrs.Tags, "severity"),
+								signalCustomString(attrs.Custom, "status"),
+							)
+						}
+						cursor := ""
+						if resp.Meta != nil && resp.Meta.Page != nil {
+							cursor = resp.Meta.Page.GetAfter()
+						}
+						if cursor == "" {
+							break
+						}
+						opts = *baseOpts
+						opts.PageCursor = &cursor
+					}
+					return nil
+				}()
+
+				if apiErr != nil {
+					if errors.Is(apiErr, context.Canceled) || errors.Is(apiErr, context.DeadlineExceeded) {
+						return nil
+					}
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", apiErr)
+				} else {
+					prevSeen = currSeen
+					currSeen = nextSeen
+					since = to.Add(-ingestionOverlap)
+				}
+
+				select {
+				case <-sapi.ctx.Done():
+					return nil
+				case <-time.After(securityTailPollInterval):
+				}
+			}
+		},
+	}
+
+	cmd.Flags().StringVar(&query, "query", "", "signal filter query")
+	return cmd
+}
+
+func newSecuritySignalShowCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show <signal-id>",
+		Short: "Show security signal details",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			signalID := args[0]
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			resp, httpResp, err := sapi.api.GetSecurityMonitoringSignal(sapi.ctx, signalID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get signal: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			sig := resp.GetData()
+			if asJSON {
+				return output.PrintJSON(cmd.OutOrStdout(), sig)
+			}
+
+			attrs := sig.GetAttributes()
+			ts := ""
+			if t := attrs.Timestamp; t != nil {
+				ts = t.UTC().Format(time.RFC3339)
+			}
+			fields := []struct{ k, v string }{
+				{"ID", sig.GetId()},
+				{"Timestamp", ts},
+				{"Rule", signalCustomString(attrs.Custom, "workflow.rule.name")},
+				{"Severity", signalTagValue(attrs.Tags, "severity")},
+				{"Status", signalCustomString(attrs.Custom, "status")},
+				{"Message", attrs.GetMessage()},
+				{"Tags", strings.Join(attrs.GetTags(), ", ")},
+			}
+			w := cmd.OutOrStdout()
+			for _, f := range fields {
+				if f.v == "" {
+					continue
+				}
+				fmt.Fprintf(w, "%-12s %s\n", f.k+":", f.v) //nolint:errcheck
+			}
+			return nil
+		},
+	}
+	return cmd
 }
 
 // signalTagValue extracts the value for a tag prefix from a tags slice.

@@ -222,6 +222,183 @@ func TestSecuritySignalSearchJSONOutput(t *testing.T) {
 	}
 }
 
+const mockSignalShowResponse = `{
+	"data": {
+		"id": "signal-abc123",
+		"type": "signal",
+		"attributes": {
+			"timestamp": "2024-01-15T10:30:00.000Z",
+			"message": "Unauthorized access detected",
+			"tags": ["severity:high", "source:cloudtrail"],
+			"custom": {
+				"status": "open",
+				"workflow.rule.name": "AWS CloudTrail Rule"
+			}
+		}
+	}
+}`
+
+func buildSignalTailCmd(mkAPI func() (*securityAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	sec := &cobra.Command{Use: "security"}
+	sig := &cobra.Command{Use: "signal"}
+	sig.AddCommand(newSecuritySignalTailCmd(mkAPI))
+	sec.AddCommand(sig)
+	root.AddCommand(sec)
+	return root, buf
+}
+
+func buildSignalShowCmd(mkAPI func() (*securityAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	sec := &cobra.Command{Use: "security"}
+	sig := &cobra.Command{Use: "signal"}
+	sig.AddCommand(newSecuritySignalShowCmd(mkAPI))
+	sec.AddCommand(sig)
+	root.AddCommand(sec)
+	return root, buf
+}
+
+func TestSecuritySignalTailFlagQuery(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedReqs []*http.Request
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	callCount := 0
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedReqs = append(capturedReqs, r)
+		callCount++
+		if callCount >= 2 {
+			cancel()
+		}
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":[]}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSignalTailCmd(newTestSecurityAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"security", "signal", "tail", "--query", "source:cloudtrail"})
+	_ = root.Execute()
+
+	mu.Lock()
+	reqs := capturedReqs
+	mu.Unlock()
+	if len(reqs) == 0 {
+		t.Fatal("no requests made to mock server")
+	}
+	if got := reqs[0].URL.Query().Get("filter[query]"); got != "source:cloudtrail" {
+		t.Errorf("filter[query] = %q, want %q", got, "source:cloudtrail")
+	}
+}
+
+func TestSecuritySignalTailPollsAPIAndPrintsNewSignals(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	var mu sync.Mutex
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mu.Lock()
+		callCount++
+		n := callCount
+		mu.Unlock()
+		if n == 1 {
+			fmt.Fprint(w, mockSignalsResponse) //nolint:errcheck
+		} else {
+			cancel()
+			fmt.Fprint(w, `{"data":[]}`) //nolint:errcheck
+		}
+	}))
+	defer srv.Close()
+
+	root, buf := buildSignalTailCmd(newTestSecurityAPIWithCtx(srv, ctx))
+	root.SetArgs([]string{"security", "signal", "tail"})
+	_ = root.Execute()
+
+	mu.Lock()
+	calls := callCount
+	mu.Unlock()
+	if calls < 2 {
+		t.Errorf("expected at least 2 API calls for polling, got %d", calls)
+	}
+
+	out := buf.String()
+	for _, want := range []string{"signal-abc123", "high", "open", "AWS CloudTrail Rule"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSecuritySignalShowDetail(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/signal-abc123") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSignalShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSignalShowCmd(newTestSecurityAPI(srv))
+	root.SetArgs([]string{"security", "signal", "show", "signal-abc123"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	for _, want := range []string{
+		"signal-abc123", "AWS CloudTrail Rule", "high", "open",
+		"Unauthorized access detected", "2024-01-15",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestSecuritySignalShowJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockSignalShowResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildSignalShowCmd(newTestSecurityAPI(srv))
+	root.SetArgs([]string{"security", "signal", "show", "signal-abc123", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["id"] != "signal-abc123" {
+		t.Errorf("id = %v, want signal-abc123", result["id"])
+	}
+}
+
 func TestSecuritySignalSearchDefaultFrom(t *testing.T) {
 	t.Parallel()
 
