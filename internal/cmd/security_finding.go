@@ -33,7 +33,7 @@ func newSecurityFindingCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
 
 func newSecurityFindingListCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
 	var (
-		query string
+		tags  string
 		limit int
 	)
 
@@ -53,8 +53,8 @@ func newSecurityFindingListCmd(mkAPI func() (*securityAPI, error)) *cobra.Comman
 
 			opts := datadogV2.NewListFindingsOptionalParameters().
 				WithPageLimit(int64(limit)) //nolint:gosec
-			if query != "" {
-				opts = opts.WithFilterTags(query)
+			if tags != "" {
+				opts = opts.WithFilterTags(tags)
 			}
 
 			resp, httpResp, err := sapi.api.ListFindings(sapi.ctx, *opts)
@@ -104,7 +104,7 @@ func newSecurityFindingListCmd(mkAPI func() (*securityAPI, error)) *cobra.Comman
 		},
 	}
 
-	cmd.Flags().StringVar(&query, "query", "", "filter by tags (e.g. env:prod)")
+	cmd.Flags().StringVar(&tags, "tags", "", "filter by tags (e.g. env:prod)")
 	cmd.Flags().IntVar(&limit, "limit", 50, "max number of findings to return")
 	return cmd
 }

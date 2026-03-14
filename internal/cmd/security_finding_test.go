@@ -140,7 +140,7 @@ func TestSecurityFindingListWithQuery(t *testing.T) {
 	defer srv.Close()
 
 	root, _ := buildFindingCmd(newTestSecurityAPI(srv))
-	root.SetArgs([]string{"security", "finding", "list", "--query", "env:prod", "--limit", "10"})
+	root.SetArgs([]string{"security", "finding", "list", "--tags", "env:prod", "--limit", "10"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

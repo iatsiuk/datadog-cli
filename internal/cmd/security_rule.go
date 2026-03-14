@@ -153,6 +153,15 @@ func newSecurityRuleShowCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
 					}
 				}
 				queries = strings.Join(qs, "; ")
+			} else if sig := resp.SecurityMonitoringSignalRuleResponse; sig != nil {
+				message = sig.GetMessage()
+				var qs []string
+				for _, q := range sig.GetQueries() {
+					if s := q.GetRuleId(); s != "" {
+						qs = append(qs, s)
+					}
+				}
+				queries = strings.Join(qs, "; ")
 			}
 
 			fields := []struct{ k, v string }{
