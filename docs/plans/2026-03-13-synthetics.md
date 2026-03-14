@@ -105,12 +105,12 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 5: synthetics trigger and batch subcommands
 
-- [ ] write tests for `synthetics trigger`: parses --id flag (comma-separated public IDs)
-- [ ] write tests for `synthetics trigger`: outputs triggered results table
-- [ ] write tests for `synthetics batch <batch-id>`: outputs batch details
-- [ ] implement `synthetics trigger` in `synthetics_trigger.go` using `TriggerTests()`
-- [ ] implement `synthetics batch` using `GetSyntheticsCIBatch()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `synthetics trigger`: parses --id flag (comma-separated public IDs)
+- [x] write tests for `synthetics trigger`: outputs triggered results table
+- [x] write tests for `synthetics batch <batch-id>`: outputs batch details
+- [x] implement `synthetics trigger` in `synthetics_trigger.go` using `TriggerTests()`
+- [x] implement `synthetics batch` using `GetSyntheticsCIBatch()`
+- [x] run tests - must pass before next task
 
 ### Task 6: synthetics variable subcommands (global variables CRUD)
 
