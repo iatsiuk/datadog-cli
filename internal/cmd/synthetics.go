@@ -42,6 +42,7 @@ func NewSyntheticsCommand() *cobra.Command {
 	cmd.AddCommand(newSyntheticsSearchCmd(defaultSyntheticsAPI))
 	cmd.AddCommand(newSyntheticsShowCmd(defaultSyntheticsAPI))
 	cmd.AddCommand(newSyntheticsDeleteCmd(defaultSyntheticsAPI))
+	cmd.AddCommand(newSyntheticsCreateCmd(defaultSyntheticsAPI))
 	return cmd
 }
 

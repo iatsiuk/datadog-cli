@@ -87,12 +87,12 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 3: synthetics create subcommands
 
-- [ ] write tests for `synthetics create api`: parses --name, --type (http|ssl|dns|tcp|icmp|grpc|websocket), --url, --locations, --frequency, --status flags
-- [ ] write tests for `synthetics create api`: creates test with correct config structure
-- [ ] write tests for `synthetics create browser`: parses --name, --url, --locations, --frequency flags
-- [ ] implement `synthetics create api` using `CreateSyntheticsAPITest()`
-- [ ] implement `synthetics create browser` using `CreateSyntheticsBrowserTest()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `synthetics create api`: parses --name, --type (http|ssl|dns|tcp|icmp|grpc|websocket), --url, --locations, --frequency, --status flags
+- [x] write tests for `synthetics create api`: creates test with correct config structure
+- [x] write tests for `synthetics create browser`: parses --name, --url, --locations, --frequency flags
+- [x] implement `synthetics create api` using `CreateSyntheticsAPITest()`
+- [x] implement `synthetics create browser` using `CreateSyntheticsBrowserTest()`
+- [x] run tests - must pass before next task
 
 ### Task 4: synthetics results subcommands
 
