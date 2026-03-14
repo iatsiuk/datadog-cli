@@ -50,6 +50,7 @@ func NewSecurityCommand() *cobra.Command {
 	cmd.AddCommand(sig)
 	cmd.AddCommand(newSecurityRuleCmd(defaultSecurityAPI))
 	cmd.AddCommand(newSecuritySuppressionCmd(defaultSecurityAPI))
+	cmd.AddCommand(newSecurityFilterCmd(defaultSecurityAPI))
 	return cmd
 }
 
