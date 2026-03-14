@@ -114,13 +114,13 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 6: synthetics variable subcommands (global variables CRUD)
 
-- [ ] write tests for `synthetics variable list`: outputs table (id, name, type, tags)
-- [ ] write tests for `synthetics variable show <id>`: outputs detail view
-- [ ] write tests for `synthetics variable create`: parses --name, --value, --type, --tags flags
-- [ ] write tests for `synthetics variable update <id>`: parses update flags
-- [ ] write tests for `synthetics variable delete <id>`: requires --yes flag
-- [ ] implement all variable subcommands in `synthetics_variable.go`
-- [ ] run tests - must pass before next task
+- [x] write tests for `synthetics variable list`: outputs table (id, name, type, tags)
+- [x] write tests for `synthetics variable show <id>`: outputs detail view
+- [x] write tests for `synthetics variable create`: parses --name, --value, --type, --tags flags
+- [x] write tests for `synthetics variable update <id>`: parses update flags
+- [x] write tests for `synthetics variable delete <id>`: requires --yes flag
+- [x] implement all variable subcommands in `synthetics_variable.go`
+- [x] run tests - must pass before next task
 
 ### Task 7: synthetics location subcommands
 
