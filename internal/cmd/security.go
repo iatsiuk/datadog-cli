@@ -44,6 +44,9 @@ func NewSecurityCommand() *cobra.Command {
 	sig.AddCommand(newSecuritySignalSearchCmd(defaultSecurityAPI))
 	sig.AddCommand(newSecuritySignalTailCmd(defaultSecurityAPI))
 	sig.AddCommand(newSecuritySignalShowCmd(defaultSecurityAPI))
+	sig.AddCommand(newSecuritySignalSetStateCmd(defaultSecurityAPI))
+	sig.AddCommand(newSecuritySignalAssignCmd(defaultSecurityAPI))
+	sig.AddCommand(newSecuritySignalAddIncidentCmd(defaultSecurityAPI))
 	cmd.AddCommand(sig)
 	return cmd
 }
@@ -310,6 +313,127 @@ func newSecuritySignalShowCmd(mkAPI func() (*securityAPI, error)) *cobra.Command
 			return nil
 		},
 	}
+	return cmd
+}
+
+func newSecuritySignalSetStateCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
+	var state string
+
+	cmd := &cobra.Command{
+		Use:   "set-state <signal-id>",
+		Short: "Set the triage state of a security signal",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			signalID := args[0]
+
+			sv, err := datadogV2.NewSecurityMonitoringSignalStateFromValue(state)
+			if err != nil {
+				return fmt.Errorf("--state: %w", err)
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			body := datadogV2.SecurityMonitoringSignalStateUpdateRequest{
+				Data: datadogV2.SecurityMonitoringSignalStateUpdateData{
+					Attributes: datadogV2.SecurityMonitoringSignalStateUpdateAttributes{
+						State: *sv,
+					},
+				},
+			}
+			_, httpResp, err := sapi.api.EditSecurityMonitoringSignalState(sapi.ctx, signalID, body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("set-state: %w", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&state, "state", "", "new signal state: open, archived, under_review (required)")
+	_ = cmd.MarkFlagRequired("state")
+	return cmd
+}
+
+func newSecuritySignalAssignCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
+	var assignee string
+
+	cmd := &cobra.Command{
+		Use:   "assign <signal-id>",
+		Short: "Assign a security signal to a user",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			signalID := args[0]
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			user := datadogV2.SecurityMonitoringTriageUser{Uuid: ""}
+			user.SetHandle(assignee)
+			body := datadogV2.SecurityMonitoringSignalAssigneeUpdateRequest{
+				Data: datadogV2.SecurityMonitoringSignalAssigneeUpdateData{
+					Attributes: datadogV2.SecurityMonitoringSignalAssigneeUpdateAttributes{
+						Assignee: user,
+					},
+				},
+			}
+			_, httpResp, err := sapi.api.EditSecurityMonitoringSignalAssignee(sapi.ctx, signalID, body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("assign: %w", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&assignee, "assignee", "", "user handle to assign (required)")
+	_ = cmd.MarkFlagRequired("assignee")
+	return cmd
+}
+
+func newSecuritySignalAddIncidentCmd(mkAPI func() (*securityAPI, error)) *cobra.Command {
+	var incidentID int64
+
+	cmd := &cobra.Command{
+		Use:   "add-incident <signal-id>",
+		Short: "Link a security signal to an incident",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			signalID := args[0]
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			body := datadogV2.SecurityMonitoringSignalIncidentsUpdateRequest{
+				Data: datadogV2.SecurityMonitoringSignalIncidentsUpdateData{
+					Attributes: datadogV2.SecurityMonitoringSignalIncidentsUpdateAttributes{
+						IncidentIds: []int64{incidentID},
+					},
+				},
+			}
+			_, httpResp, err := sapi.api.EditSecurityMonitoringSignalIncidents(sapi.ctx, signalID, body)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("add-incident: %w", err)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().Int64Var(&incidentID, "incident-id", 0, "incident ID to link (required)")
+	_ = cmd.MarkFlagRequired("incident-id")
 	return cmd
 }
 

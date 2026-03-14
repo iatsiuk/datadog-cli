@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -396,6 +397,127 @@ func TestSecuritySignalShowJSONOutput(t *testing.T) {
 	}
 	if result["id"] != "signal-abc123" {
 		t.Errorf("id = %v, want signal-abc123", result["id"])
+	}
+}
+
+func buildSignalTriageCmd(mkAPI func() (*securityAPI, error)) (*cobra.Command, *bytes.Buffer) {
+	root := &cobra.Command{Use: "datadog-cli"}
+	root.PersistentFlags().Bool("json", false, "output as JSON")
+	buf := &bytes.Buffer{}
+	root.SetOut(buf)
+	root.SetErr(&bytes.Buffer{})
+	sec := &cobra.Command{Use: "security"}
+	sig := &cobra.Command{Use: "signal"}
+	sig.AddCommand(newSecuritySignalSetStateCmd(mkAPI))
+	sig.AddCommand(newSecuritySignalAssignCmd(mkAPI))
+	sig.AddCommand(newSecuritySignalAddIncidentCmd(mkAPI))
+	sec.AddCommand(sig)
+	root.AddCommand(sec)
+	return root, buf
+}
+
+const mockTriageUpdateResponse = `{"data":{}}`
+
+func TestSecuritySignalSetState(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTriageUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSignalTriageCmd(newTestSecurityAPI(srv))
+	root.SetArgs([]string{"security", "signal", "set-state", "signal-abc123", "--state", "archived"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(body), `"archived"`) {
+		t.Errorf("request body missing state value: %s", body)
+	}
+}
+
+func TestSecuritySignalSetStateInvalidState(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTriageUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSignalTriageCmd(newTestSecurityAPI(srv))
+	root.SetArgs([]string{"security", "signal", "set-state", "signal-abc123", "--state", "invalid"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("expected error for invalid state")
+	}
+}
+
+func TestSecuritySignalAssign(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTriageUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSignalTriageCmd(newTestSecurityAPI(srv))
+	root.SetArgs([]string{"security", "signal", "assign", "signal-abc123", "--assignee", "user@example.com"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(body), "user@example.com") {
+		t.Errorf("request body missing assignee handle: %s", body)
+	}
+}
+
+func TestSecuritySignalAddIncident(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu           sync.Mutex
+		capturedBody []byte
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		capturedBody, _ = io.ReadAll(r.Body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockTriageUpdateResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, _ := buildSignalTriageCmd(newTestSecurityAPI(srv))
+	root.SetArgs([]string{"security", "signal", "add-incident", "signal-abc123", "--incident-id", "12345"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	mu.Lock()
+	body := capturedBody
+	mu.Unlock()
+	if !strings.Contains(string(body), "12345") {
+		t.Errorf("request body missing incident id: %s", body)
 	}
 }
 
