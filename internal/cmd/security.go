@@ -49,6 +49,7 @@ func NewSecurityCommand() *cobra.Command {
 	sig.AddCommand(newSecuritySignalAddIncidentCmd(defaultSecurityAPI))
 	cmd.AddCommand(sig)
 	cmd.AddCommand(newSecurityRuleCmd(defaultSecurityAPI))
+	cmd.AddCommand(newSecuritySuppressionCmd(defaultSecurityAPI))
 	return cmd
 }
 
