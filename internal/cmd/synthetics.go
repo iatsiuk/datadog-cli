@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,10 @@ import (
 	"github.com/iatsiuk/datadog-cli/internal/config"
 	"github.com/iatsiuk/datadog-cli/internal/output"
 )
+
+var errSyntheticsPublicIDRequired = errors.New("public-id argument is required")
+var errSyntheticsIDFlagRequired = errors.New("--id is required")
+var errSyntheticsYesRequired = errors.New("--yes is required to confirm destructive action")
 
 type syntheticsAPI struct {
 	api *datadogV1.SyntheticsApi
@@ -35,6 +40,8 @@ func NewSyntheticsCommand() *cobra.Command {
 	}
 	cmd.AddCommand(newSyntheticsListCmd(defaultSyntheticsAPI))
 	cmd.AddCommand(newSyntheticsSearchCmd(defaultSyntheticsAPI))
+	cmd.AddCommand(newSyntheticsShowCmd(defaultSyntheticsAPI))
+	cmd.AddCommand(newSyntheticsDeleteCmd(defaultSyntheticsAPI))
 	return cmd
 }
 
@@ -145,5 +152,170 @@ func newSyntheticsSearchCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command
 	}
 
 	cmd.Flags().StringVar(&query, "query", "", "search query text")
+	return cmd
+}
+
+func newSyntheticsShowCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "show <public-id>",
+		Short: "Show details of a Synthetic test",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			publicID := args[0]
+			if publicID == "" {
+				return errSyntheticsPublicIDRequired
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			// detect test type first
+			summary, httpResp, err := sapi.api.GetTest(sapi.ctx, publicID)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("get synthetics test: %w", err)
+			}
+
+			asJSON := false
+			if f := cmd.Root().PersistentFlags().Lookup("json"); f != nil {
+				asJSON = f.Value.String() == "true"
+			}
+
+			testType := summary.GetType()
+			switch testType {
+			case datadogV1.SYNTHETICSTESTDETAILSTYPE_BROWSER:
+				t, httpResp2, err2 := sapi.api.GetBrowserTest(sapi.ctx, publicID)
+				if httpResp2 != nil {
+					_ = httpResp2.Body.Close()
+				}
+				if err2 != nil {
+					return fmt.Errorf("get browser test: %w", err2)
+				}
+				if asJSON {
+					return output.PrintJSON(cmd.OutOrStdout(), t)
+				}
+				return synthShowBrowserTest(cmd, t)
+			case datadogV1.SYNTHETICSTESTDETAILSTYPE_MOBILE:
+				t, httpResp2, err2 := sapi.api.GetMobileTest(sapi.ctx, publicID)
+				if httpResp2 != nil {
+					_ = httpResp2.Body.Close()
+				}
+				if err2 != nil {
+					return fmt.Errorf("get mobile test: %w", err2)
+				}
+				if asJSON {
+					return output.PrintJSON(cmd.OutOrStdout(), t)
+				}
+				return synthShowMobileTest(cmd, t)
+			default: // api or unknown - fall back to API test
+				t, httpResp2, err2 := sapi.api.GetAPITest(sapi.ctx, publicID)
+				if httpResp2 != nil {
+					_ = httpResp2.Body.Close()
+				}
+				if err2 != nil {
+					return fmt.Errorf("get api test: %w", err2)
+				}
+				if asJSON {
+					return output.PrintJSON(cmd.OutOrStdout(), t)
+				}
+				return synthShowAPITest(cmd, t)
+			}
+		},
+	}
+	return cmd
+}
+
+func synthShowAPITest(cmd *cobra.Command, t datadogV1.SyntheticsAPITest) error {
+	rows := [][]string{
+		{"PUBLIC_ID", t.GetPublicId()},
+		{"NAME", t.GetName()},
+		{"TYPE", string(t.GetType())},
+		{"STATUS", string(t.GetStatus())},
+		{"LOCATIONS", strings.Join(t.GetLocations(), ", ")},
+		{"TAGS", strings.Join(t.GetTags(), ", ")},
+		{"MESSAGE", t.GetMessage()},
+	}
+	return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+}
+
+func synthShowBrowserTest(cmd *cobra.Command, t datadogV1.SyntheticsBrowserTest) error {
+	rows := [][]string{
+		{"PUBLIC_ID", t.GetPublicId()},
+		{"NAME", t.GetName()},
+		{"TYPE", string(t.GetType())},
+		{"STATUS", string(t.GetStatus())},
+		{"LOCATIONS", strings.Join(t.GetLocations(), ", ")},
+		{"TAGS", strings.Join(t.GetTags(), ", ")},
+		{"MESSAGE", t.GetMessage()},
+	}
+	return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+}
+
+func synthShowMobileTest(cmd *cobra.Command, t datadogV1.SyntheticsMobileTest) error {
+	rows := [][]string{
+		{"PUBLIC_ID", t.GetPublicId()},
+		{"NAME", t.GetName()},
+		{"TYPE", string(t.GetType())},
+		{"STATUS", string(t.GetStatus())},
+		{"DEVICE_IDS", strings.Join(t.GetDeviceIds(), ", ")},
+		{"TAGS", strings.Join(t.GetTags(), ", ")},
+	}
+	return output.PrintTable(cmd.OutOrStdout(), []string{"FIELD", "VALUE"}, rows)
+}
+
+func newSyntheticsDeleteCmd(mkAPI func() (*syntheticsAPI, error)) *cobra.Command {
+	var (
+		ids string
+		yes bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Delete one or more Synthetic tests",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if ids == "" {
+				return errSyntheticsIDFlagRequired
+			}
+			if !yes {
+				return errSyntheticsYesRequired
+			}
+
+			publicIDs := strings.Split(ids, ",")
+			for i, id := range publicIDs {
+				publicIDs[i] = strings.TrimSpace(id)
+			}
+
+			sapi, err := mkAPI()
+			if err != nil {
+				return err
+			}
+
+			payload := datadogV1.SyntheticsDeleteTestsPayload{}
+			payload.SetPublicIds(publicIDs)
+
+			resp, httpResp, err := sapi.api.DeleteTests(sapi.ctx, payload)
+			if httpResp != nil {
+				_ = httpResp.Body.Close()
+			}
+			if err != nil {
+				return fmt.Errorf("delete synthetics tests: %w", err)
+			}
+
+			deleted := resp.GetDeletedTests()
+			deletedIDs := make([]string, 0, len(deleted))
+			for _, d := range deleted {
+				deletedIDs = append(deletedIDs, d.GetPublicId())
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "deleted %d test(s): %s\n", len(deletedIDs), strings.Join(deletedIDs, ", ")) //nolint:errcheck
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&ids, "id", "", "comma-separated public IDs to delete (required)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm deletion")
 	return cmd
 }

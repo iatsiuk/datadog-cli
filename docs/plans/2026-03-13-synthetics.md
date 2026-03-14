@@ -78,12 +78,12 @@ Uses `github.com/DataDog/datadog-api-client-go/v2` (datadogV1.SyntheticsApi).
 
 ### Task 2: synthetics show and delete subcommands
 
-- [ ] write tests for `synthetics show <public-id>`: outputs API test details (type detection)
-- [ ] write tests for `synthetics show <public-id>`: outputs browser test details
-- [ ] write tests for `synthetics delete`: parses --id flag (comma-separated), requires --yes
-- [ ] implement `synthetics show` using `GetAPITest()` / `GetBrowserTest()` / `GetMobileTest()` with fallback
-- [ ] implement `synthetics delete` using `DeleteTests()`
-- [ ] run tests - must pass before next task
+- [x] write tests for `synthetics show <public-id>`: outputs API test details (type detection)
+- [x] write tests for `synthetics show <public-id>`: outputs browser test details
+- [x] write tests for `synthetics delete`: parses --id flag (comma-separated), requires --yes
+- [x] implement `synthetics show` using `GetAPITest()` / `GetBrowserTest()` / `GetMobileTest()` with fallback
+- [x] implement `synthetics delete` using `DeleteTests()`
+- [x] run tests - must pass before next task
 
 ### Task 3: synthetics create subcommands
 
