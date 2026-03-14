@@ -545,6 +545,52 @@ Finding list output columns: `ID | RULE | RESOURCE | STATUS | EVALUATION`
 
 `--yes` is required for destructive operations (delete)
 
+### synthetics
+
+Manage Synthetic tests, global variables, locations, and fetch uptime data.
+
+```
+datadog-cli synthetics list [--page-size <n>]
+datadog-cli synthetics search [--query <query>]
+datadog-cli synthetics show <public-id>
+datadog-cli synthetics delete --id <id1,id2,...> --yes
+
+datadog-cli synthetics create api --name <name> --url <url> --locations <loc,...> [--type <http|ssl|dns|tcp|icmp|grpc|websocket>] [--frequency <s>] [--status <live|paused>] [--tags <tag,...>]
+datadog-cli synthetics create browser --name <name> --url <url> --locations <loc,...> [--frequency <s>] [--tags <tag,...>]
+
+datadog-cli synthetics results <public-id> [--result-id <id>]
+datadog-cli synthetics trigger --id <id1,id2,...>
+datadog-cli synthetics batch <batch-id>
+
+datadog-cli synthetics variable list
+datadog-cli synthetics variable show <id>
+datadog-cli synthetics variable create --name <name> [--value <value>] [--description <text>] [--tags <tag,...>] [--secure]
+datadog-cli synthetics variable update <id> --name <name> [--value <value>] [--description <text>] [--tags <tag,...>]
+datadog-cli synthetics variable delete <id> --yes
+
+datadog-cli synthetics location list
+datadog-cli synthetics location defaults
+datadog-cli synthetics private-location show <id>
+datadog-cli synthetics private-location create --name <name> [--description <text>] [--tags <tag,...>]
+datadog-cli synthetics private-location delete <id> --yes
+
+datadog-cli synthetics uptime --id <id1,id2,...> --from <time> [--to <time>]
+```
+
+List output columns: `PUBLIC_ID | NAME | TYPE | STATUS | LOCATIONS`
+
+Variable list output columns: `ID | NAME | DESCRIPTION | SECURE | TAGS`
+
+Results output columns: `RESULT_ID | LOCATION | STATUS | TIMESTAMP`
+
+`--type` for API tests accepts: `http`, `ssl`, `dns`, `tcp`, `icmp`, `grpc`, `websocket` (default: `http`)
+
+`--status` accepts: `live`, `paused` (default: `live`)
+
+`--from` / `--to` accept relative times (e.g. `now-24h`) or RFC3339 timestamps; `--to` defaults to `now`
+
+`--yes` is required for destructive operations (delete)
+
 ## Shell Completion
 
 Generate tab-completion scripts for your shell.
