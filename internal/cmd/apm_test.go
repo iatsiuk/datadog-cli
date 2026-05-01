@@ -618,6 +618,57 @@ func TestAPMServicesTableOutput(t *testing.T) {
 	}
 }
 
+func TestAPMServicesJSONOutput(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockServicesResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMServicesCmd(newTestAPMAPI(srv))
+	root.SetArgs([]string{"apm", "services", "--env", "prod", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var result []map[string]string
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	want := []string{"web-store", "checkout", "payment"}
+	if len(result) != len(want) {
+		t.Fatalf("got %d entries, want %d: %s", len(result), len(want), buf.String())
+	}
+	for i, svc := range want {
+		if got := result[i]["name"]; got != svc {
+			t.Errorf("result[%d][\"name\"] = %q, want %q", i, got, svc)
+		}
+	}
+}
+
+func TestAPMServicesJSONEmpty(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"type":"services_list","attributes":{"services":[]}}}`) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildAPMServicesCmd(newTestAPMAPI(srv))
+	root.SetArgs([]string{"apm", "services", "--env", "prod", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	got := strings.TrimSpace(buf.String())
+	if got != "[]" {
+		t.Errorf("output = %q, want %q", got, "[]")
+	}
+}
+
 func TestAPMServicesRequiresEnv(t *testing.T) {
 	t.Parallel()
 
