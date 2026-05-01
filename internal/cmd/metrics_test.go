@@ -1124,9 +1124,12 @@ func TestMetricsMetadataShowJSONOutput(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	var result interface{}
+	var result map[string]interface{}
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("invalid JSON: %v\n%s", err, buf.String())
+	}
+	if result["type"] != "gauge" {
+		t.Errorf("expected type=gauge, got %v", result["type"])
 	}
 }
 
@@ -1143,6 +1146,52 @@ func TestMetricsMetadataShowRequiresArg(t *testing.T) {
 	root.SetArgs([]string{"metrics", "metadata", "show"})
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected error when metric name is missing")
+	}
+}
+
+func TestMetricsMetadataDefaultsToShow(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, mockMetricsMetadataResponse) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	root, buf := buildMetricsMetadataCmd(newTestMetricsV1API(srv))
+	root.SetArgs([]string{"metrics", "metadata", "system.cpu.user", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if strings.Contains(out, "Available Commands") {
+		t.Fatalf("expected metadata payload, got help text:\n%s", out)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
+		t.Fatalf("invalid JSON: %v\n%s", err, out)
+	}
+	if result["type"] != "gauge" {
+		t.Errorf("expected type=gauge, got %v", result["type"])
+	}
+}
+
+func TestMetricsMetadataNoArgsPrintsHelp(t *testing.T) {
+	t.Parallel()
+
+	root, buf := buildMetricsMetadataCmd(func() (*metricsV1API, error) {
+		panic("unexpected API call in help path")
+	})
+	root.SetArgs([]string{"metrics", "metadata"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "Available Commands") {
+		t.Errorf("expected help text with 'Available Commands', got:\n%s", out)
 	}
 }
 
@@ -1726,6 +1775,40 @@ func TestMetricsTagsRequiresArg(t *testing.T) {
 	root.SetArgs([]string{"metrics", "tags"})
 	if err := root.Execute(); err == nil {
 		t.Fatal("expected error when metric name is missing")
+	}
+}
+
+func TestMetricsTagsHelpHasExample(t *testing.T) {
+	t.Parallel()
+
+	root, buf := buildMetricsTagsCmd(func() (*metricsV2API, error) {
+		panic("unexpected API call in help path")
+	})
+	root.SetArgs([]string{"metrics", "tags", "--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "metrics tags postgresql") {
+		t.Errorf("help output missing example 'metrics tags postgresql':\n%s", out)
+	}
+}
+
+func TestMetricsMetadataShowHelpHasExample(t *testing.T) {
+	t.Parallel()
+
+	root, buf := buildMetricsMetadataCmd(func() (*metricsV1API, error) {
+		panic("unexpected API call in help path")
+	})
+	root.SetArgs([]string{"metrics", "metadata", "show", "--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "metrics metadata show postgresql") {
+		t.Errorf("help output missing example 'metrics metadata show postgresql':\n%s", out)
 	}
 }
 
