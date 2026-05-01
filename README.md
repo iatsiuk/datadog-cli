@@ -60,7 +60,7 @@ Supported sites: `datadoghq.com`, `us3.datadoghq.com`, `us5.datadoghq.com`, `dat
 datadog-cli [command] [flags]
 
 Flags:
-  --json        Output in JSON format
+  --json        Output in JSON format (errors also written as {"error":"..."} to stderr)
   --version     Show version
   -h, --help    Show help
 ```
@@ -121,6 +121,7 @@ datadog-cli metrics list --from <unix>
 datadog-cli metrics scalar --query <expr> --from <unix> --to <unix> [--aggregator <avg|sum|min|max|last>]
 datadog-cli metrics timeseries --query <expr> --from <unix> --to <unix>
 datadog-cli metrics submit --metric <name> --type <gauge|count|rate> --points <ts:value> [--points <ts:value> ...] [--tags <tag> ...]
+datadog-cli metrics metadata <name>
 datadog-cli metrics metadata show <name>
 datadog-cli metrics metadata update <name> [--type <type>] [--description <text>] [--unit <unit>] [--per-unit <unit>] [--short-name <name>]
 datadog-cli metrics tag-config list
@@ -147,7 +148,7 @@ Search spans, list services, manage APM retention filters and span-based metrics
 datadog-cli apm search [--query <query>] [--from <time>] [--to <time>] [--limit <n>] [--sort <field>]
 datadog-cli apm tail [--query <query>] [--service <name>]
 datadog-cli apm aggregate --compute <fn>[:<metric>] [--query <query>] [--from <time>] [--to <time>] [--group-by <facets>]
-datadog-cli apm services --env <env>
+datadog-cli apm services --env <env>            # --json returns [{"name":"<service>"},...] (array of objects)
 datadog-cli apm retention-filter list
 datadog-cli apm retention-filter show <id>
 datadog-cli apm retention-filter create --name <name> --filter <query> --rate <0.0-1.0>
