@@ -526,20 +526,29 @@ func newMetricsSubmitCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
 }
 
 func newMetricsMetadataCmd(mkAPI func() (*metricsV1API, error)) *cobra.Command {
+	showCmd := newMetricsMetadataShowCmd(mkAPI)
 	cmd := &cobra.Command{
-		Use:   "metadata",
+		Use:   "metadata <metric>",
 		Short: "Manage metric metadata",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return cmd.Help()
+			}
+			return showCmd.RunE(showCmd, args)
+		},
 	}
-	cmd.AddCommand(newMetricsMetadataShowCmd(mkAPI))
+	cmd.AddCommand(showCmd)
 	cmd.AddCommand(newMetricsMetadataUpdateCmd(mkAPI))
 	return cmd
 }
 
 func newMetricsMetadataShowCmd(mkAPI func() (*metricsV1API, error)) *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <metric>",
-		Short: "Show metadata for a metric",
-		Args:  cobra.ExactArgs(1),
+		Use:     "show <metric>",
+		Short:   "Show metadata for a metric",
+		Example: "  datadog-cli metrics metadata show postgresql.queries.time",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mapi, err := mkAPI()
 			if err != nil {
@@ -658,9 +667,10 @@ func parseMetricPoints(rawPoints []string) ([]datadogV2.MetricPoint, error) {
 
 func newMetricsTagsCmd(mkAPI func() (*metricsV2API, error)) *cobra.Command {
 	return &cobra.Command{
-		Use:   "tags <metric>",
-		Short: "List tags for a metric",
-		Args:  cobra.ExactArgs(1),
+		Use:     "tags <metric>",
+		Short:   "List tags for a metric",
+		Example: "  datadog-cli metrics tags postgresql.queries.time",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mapi, err := mkAPI()
 			if err != nil {

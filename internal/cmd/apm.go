@@ -514,10 +514,11 @@ func newAPMServicesCmd(mkAPI func() (*apmAPI, error)) *cobra.Command {
 				asJSON = f.Value.String() == "true"
 			}
 			if asJSON {
-				if services == nil {
-					services = []string{}
+				items := make([]map[string]string, len(services))
+				for i, svc := range services {
+					items[i] = map[string]string{"name": svc}
 				}
-				return output.PrintJSON(cmd.OutOrStdout(), services)
+				return output.PrintJSON(cmd.OutOrStdout(), items)
 			}
 
 			headers := []string{"SERVICE"}
